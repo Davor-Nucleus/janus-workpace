@@ -37,6 +37,7 @@ impl PlayerState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume;
         // Mettre à jour le volume de tous les sinks actifs de la soundboard
@@ -124,12 +125,7 @@ pub fn read_env_config() -> Result<EnvConfig, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
-pub fn write_env_config(config: &EnvConfig) -> Result<(), Box<dyn std::error::Error>> {
-    let data = serde_json::to_string_pretty(config)?;
-    fs::write("env.json", data)?;
-    Ok(())
-}
-
+#[allow(dead_code)]
 pub fn update_env_key(key: &str, value: Value) -> Result<(), Box<dyn std::error::Error>> {
     let mut data: Value = serde_json::from_str(&fs::read_to_string("env.json")?)?;
     data[key] = value;

@@ -3,7 +3,6 @@ mod controller;
 mod model;
 mod routes;
 mod service;
-mod view;
 
 use std::sync::{Arc, Mutex};
 use warp;
@@ -12,7 +11,7 @@ use crate::model::{PlayerState, read_env_config};
 use crate::routes::create_routes;
 use crate::service::PlayerService;
 use janus_common::gui::LogWindowHandle;
-use janus_common::logger::{log_error, log_info, set_gui_enabled};
+use janus_common::logger::{log_info, set_gui_enabled};
 
 use warp::Filter;
 

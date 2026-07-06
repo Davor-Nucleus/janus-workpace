@@ -320,13 +320,6 @@ pub fn read_env_config() -> Result<EnvConfig, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
-/// Serialize and write `EnvConfig` back to `env.json`.
-pub fn write_env_config(config: &EnvConfig) -> Result<(), Box<dyn std::error::Error>> {
-    let data = serde_json::to_string_pretty(config)?;
-    fs::write("env.json", data)?;
-    Ok(())
-}
-
 /// Update an arbitrary key in `env.json` with a given JSON value.
 pub fn update_env_key(key: &str, value: Value) -> Result<(), Box<dyn std::error::Error>> {
     let mut data: Value = serde_json::from_str(&fs::read_to_string("env.json")?)?;

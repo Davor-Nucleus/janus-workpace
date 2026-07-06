@@ -1,7 +1,6 @@
 //! Logger centralisé : envoie les logs vers la console et la fenêtre GUI.
 
-use std::ffi::c_void;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 // Utilisation d'un buffer global pour simplifier l'accès depuis la GUI Win32
 static mut LOG_BUFFER_PTR: *const Mutex<String> = std::ptr::null();
