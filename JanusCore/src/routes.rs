@@ -112,31 +112,6 @@ pub fn create_routes(
         .and(player_filter.clone())
         .and_then(PlayerController::handle_has_next);
 
-    // Route GET /api/limiter
-    let get_limiter_route = warp::path!("api" / "limiter")
-        .and(warp::get())
-        .and(player_filter.clone())
-        .and_then(PlayerController::handle_get_limiter);
-
-    // Route POST /api/limiter
-    let set_limiter_route = warp::path!("api" / "limiter")
-        .and(warp::post())
-        .and(warp::body::json())
-        .and(player_filter.clone())
-        .and_then(PlayerController::handle_set_limiter);
-
-    // Route GET /api/limiter/add
-    let limiter_add_route = warp::path!("api" / "limiter" / "add")
-        .and(warp::get())
-        .and(player_filter.clone())
-        .and_then(PlayerController::handle_limiter_add);
-
-    // Route GET /api/limiter/subtract
-    let limiter_subtract_route = warp::path!("api" / "limiter" / "subtract")
-        .and(warp::get())
-        .and(player_filter.clone())
-        .and_then(PlayerController::handle_limiter_subtract);
-
     // Route GET /api/normalization
     let get_normalization_route = warp::path!("api" / "normalization")
         .and(warp::get())
@@ -173,10 +148,6 @@ pub fn create_routes(
         .or(has_previous_route)
         .or(next_route)
         .or(has_next_route)
-        .or(get_limiter_route)
-        .or(set_limiter_route)
-        .or(limiter_add_route)
-        .or(limiter_subtract_route)
         .or(get_normalization_route)
         .or(set_normalization_route)
         .or(normalization_toggle_route)

@@ -24,7 +24,6 @@ async fn main() {
     // Lecture de la configuration depios janus_common
     let config = read_config();
     let initial_volume = config.volume.unwrap_or(1.0);
-    let initial_limiter_db = config.limiter_db.unwrap_or(0.0);
     let initial_normalization_enabled = config.normalization_enabled.unwrap_or(true);
     let port = config.port_music.unwrap_or(3030);
     let gui_enabled = config.janus_core_gui.unwrap_or(true);
@@ -55,7 +54,6 @@ async fn main() {
     let player = Arc::new(Mutex::new(PlayerState::new(
         stream_handle,
         initial_volume,
-        initial_limiter_db,
         initial_normalization_enabled,
     )));
 

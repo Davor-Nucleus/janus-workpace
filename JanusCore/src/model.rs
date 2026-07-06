@@ -34,12 +34,6 @@ pub struct VolumeRequest {
 }
 
 #[derive(Deserialize)]
-/// JSON request body for updating the limiter.
-pub struct LimiterRequest {
-    pub limiter_db: f32,
-}
-
-#[derive(Deserialize)]
 /// JSON request body for updating the normalization state.
 pub struct NormalizationRequest {
     pub enabled: bool,
@@ -54,7 +48,6 @@ pub struct PlayerState {
     pub stream_handle: rodio::OutputStreamHandle,
     pub paused: bool,
     pub volume: f32,
-    pub limiter_db: f32,
     pub current_file: Option<PathBuf>,
     // Historique des pistes jouées pour la navigation précédente
     pub history: VecDeque<PathBuf>,
@@ -70,7 +63,6 @@ impl fmt::Debug for PlayerState {
             .field("has_sink", &self.sink.is_some())
             .field("paused", &self.paused)
             .field("volume", &self.volume)
-            .field("limiter_db", &self.limiter_db)
             .field(
                 "current_file",
                 &self.current_file.as_ref().and_then(|p| {
@@ -85,11 +77,10 @@ impl fmt::Debug for PlayerState {
 }
 
 impl PlayerState {
-    /// Create a new player state with an initial volume, limiter and normalization flag.
+    /// Create a new player state with an initial volume and normalization flag.
     pub fn new(
         stream_handle: rodio::OutputStreamHandle,
         initial_volume: f32,
-        initial_limiter_db: f32,
         initial_normalization_enabled: bool,
     ) -> Self {
         Self {
@@ -98,7 +89,6 @@ impl PlayerState {
             stream_handle,
             paused: false,
             volume: initial_volume,
-            limiter_db: initial_limiter_db,
             current_file: None,
             history: VecDeque::new(),
             normalization_manager: Arc::new(NormalizationManager::default()),
@@ -154,8 +144,7 @@ impl PlayerState {
                                         1.0
                                     };
 
-                                    let final_volume = self.calculate_final_volume();
-                                    sink.set_volume(final_volume * normalization_gain);
+                                    sink.set_volume(self.volume * normalization_gain);
 
                                     sink.append(source);
                                     self.sink = Some(sink);
@@ -206,51 +195,16 @@ impl PlayerState {
         }
     }
 
-    /// Calcule le volume final en appliquant le limiteur en dB
-    fn calculate_final_volume(&self) -> f32 {
-        // Convertir le volume linéaire en dB
-        let volume_db = if self.volume > 0.0 {
-            20.0 * self.volume.log10()
-        } else {
-            f32::NEG_INFINITY
-        };
-
-        // Si le volume en dB dépasse la limite, le réduire
-        if volume_db > self.limiter_db {
-            // Convertir la limite en dB en volume linéaire
-            10.0_f32.powf(self.limiter_db / 20.0)
-        } else {
-            self.volume
-        }
-    }
-
     /// Update the in-memory volume and persist it to `env.json` (key `VOLUME`).
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume;
-        let final_volume = self.calculate_final_volume();
         if let Some(sink) = &self.sink {
-            sink.set_volume(final_volume);
+            sink.set_volume(volume);
         }
         // Mettre à jour uniquement la clé VOLUME dans env.json
         if let Err(e) = update_config_key("VOLUME", serde_json::json!(volume)) {
             log_error(format!(
                 "Erreur lors de la mise à jour du volume dans env.json: {}",
-                e
-            ));
-        }
-    }
-
-    /// Update the in-memory limiter and persist it to `env.json` (key `LIMITER_DB`).
-    pub fn set_limiter(&mut self, limiter_db: f32) {
-        self.limiter_db = limiter_db;
-        let final_volume = self.calculate_final_volume();
-        if let Some(sink) = &self.sink {
-            sink.set_volume(final_volume);
-        }
-        // Mettre à jour uniquement la clé LIMITER_DB dans env.json
-        if let Err(e) = update_config_key("LIMITER_DB", serde_json::json!(limiter_db)) {
-            log_error(format!(
-                "Erreur lors de la mise à jour du limiteur dans env.json: {}",
                 e
             ));
         }
@@ -440,8 +394,7 @@ impl PlayerState {
                                     1.0
                                 };
 
-                                let final_volume = self.calculate_final_volume();
-                                sink.set_volume(final_volume * normalization_gain);
+                                sink.set_volume(self.volume * normalization_gain);
 
                                 sink.append(source);
                                 self.sink = Some(sink);

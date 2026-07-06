@@ -13,7 +13,7 @@ use warp::ws::Message;
 use warp::ws::Ws;
 use warp::{Rejection, Reply};
 
-use crate::model::{LimiterRequest, NormalizationRequest, PlayerState, VolumeRequest, get_folders_list};
+use crate::model::{NormalizationRequest, PlayerState, VolumeRequest, get_folders_list};
 
 /// Grouping of HTTP API handlers for the player.
 pub struct PlayerController;
@@ -256,7 +256,6 @@ impl PlayerController {
                         "has_sink": guard.sink.is_some(),
                         "paused": guard.paused,
                         "volume": guard.volume,
-                        "limiter_db": guard.limiter_db,
                         "current_music": guard.get_current_music_name(),
                         "has_next": has_next,
                         "history_len": guard.history.len(),
@@ -387,69 +386,6 @@ impl PlayerController {
             "current_music": p.get_current_music_name()
         });
 
-        Ok(warp::reply::with_status(
-            warp::reply::json(&response),
-            warp::http::StatusCode::OK,
-        ))
-    }
-
-    /// Return the current limiter value as JSON.
-    pub async fn handle_get_limiter(
-        player: Arc<Mutex<PlayerState>>,
-    ) -> Result<impl Reply, std::convert::Infallible> {
-        let p = player.lock().unwrap();
-        let response = serde_json::json!({ "limiter": p.limiter_db });
-        Ok(warp::reply::with_status(
-            warp::reply::json(&response),
-            warp::http::StatusCode::OK,
-        ))
-    }
-
-    /// Update the limiter using a JSON body `{ limiter_db: f32 }`.
-    pub async fn handle_set_limiter(
-        req: LimiterRequest,
-        player: Arc<Mutex<PlayerState>>,
-    ) -> Result<impl Reply, std::convert::Infallible> {
-        let mut p = player.lock().unwrap();
-        p.set_limiter(req.limiter_db);
-        let response = serde_json::json!({
-            "message": "Limiteur mis à jour avec succès",
-            "limiter": p.limiter_db
-        });
-        Ok(warp::reply::with_status(
-            warp::reply::json(&response),
-            warp::http::StatusCode::OK,
-        ))
-    }
-
-    /// Increase limiter by +1.0 dB.
-    pub async fn handle_limiter_add(
-        player: Arc<Mutex<PlayerState>>,
-    ) -> Result<impl Reply, std::convert::Infallible> {
-        let mut p = player.lock().unwrap();
-        let new_limiter = p.limiter_db + 1.0;
-        p.set_limiter(new_limiter);
-        let response = serde_json::json!({
-            "message": "Limiteur mis à jour avec succès",
-            "limiter": p.limiter_db
-        });
-        Ok(warp::reply::with_status(
-            warp::reply::json(&response),
-            warp::http::StatusCode::OK,
-        ))
-    }
-
-    /// Decrease limiter by -1.0 dB.
-    pub async fn handle_limiter_subtract(
-        player: Arc<Mutex<PlayerState>>,
-    ) -> Result<impl Reply, std::convert::Infallible> {
-        let mut p = player.lock().unwrap();
-        let new_limiter = p.limiter_db - 1.0;
-        p.set_limiter(new_limiter);
-        let response = serde_json::json!({
-            "message": "Limiteur mis à jour avec succès",
-            "limiter": p.limiter_db
-        });
         Ok(warp::reply::with_status(
             warp::reply::json(&response),
             warp::http::StatusCode::OK,

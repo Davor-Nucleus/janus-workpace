@@ -8,7 +8,6 @@ Serveur audio headless en Rust pour la lecture de musique. Conçu pour être con
 - **Playlists par dossier** : chargement et lecture aléatoire d'un dossier entier
 - **Navigation** : piste suivante / précédente avec historique
 - **Normalisation EBU R128** : analyse automatique de la loudness à −14.0 LUFS avec cache, activable/désactivable à chaud
-- **Limiteur audio** : plafond en dB configurable pour éviter la saturation
 - **Métadonnées** : lecture des tags ID3/Vorbis (titre, artiste, album, date, pochette en base64)
 - **WebSocket** : flux temps réel de l'état du lecteur pour les overlays
 - **Fenêtre de logs Windows** : fenêtre Win32 optionnelle affichant les logs en temps réel
@@ -21,7 +20,6 @@ Créez `env.json` à la racine du binaire :
 {
   "PORT_MUSIC": 3001,
   "VOLUME": 0.8,
-  "LIMITER_DB": 0.0,
   "janusCoreGui": true,
   "normalizationEnabled": true
 }
@@ -31,7 +29,6 @@ Créez `env.json` à la racine du binaire :
 |-----|------|-------------|
 | `PORT_MUSIC` | int | Port HTTP du serveur |
 | `VOLUME` | float (0.0–1.0) | Volume initial |
-| `LIMITER_DB` | float | Plafond en dB (0.0 = pas de limite) |
 | `janusCoreGui` | bool | Ouvre la fenêtre de logs Win32 |
 | `normalizationEnabled` | bool | Active la normalisation EBU R128 au démarrage (défaut : `true`) |
 
@@ -73,17 +70,6 @@ Toutes les routes sont en **GET** sauf indication contraire.
 | `POST /api/volume` | Body : `{ "volume": 0.8 }` |
 | `GET /api/volume/add` | +0.05 |
 | `GET /api/volume/subtract` | −0.05 |
-
-### Limiteur
-
-| Route | Description |
-|-------|-------------|
-| `GET /api/limiter` | `{ "limiter": float }` |
-| `POST /api/limiter` | Body : `{ "limiter_db": -6.0 }` |
-| `GET /api/limiter/add` | +1.0 dB |
-| `GET /api/limiter/subtract` | −1.0 dB |
-
-Une valeur `0.0` dB = aucun plafond. Des valeurs négatives réduisent le volume maximum (ex. `−6.0` dB ≈ 50%).
 
 ### Normalisation EBU R128
 
@@ -129,7 +115,6 @@ Envoyé à chaque changement d'état (polling 500 ms) :
   "has_sink": true,
   "paused": false,
   "volume": 0.8,
-  "limiter_db": 0.0,
   "current_music": "04 - Theme.mp3",
   "has_next": true,
   "history_len": 3,
@@ -148,10 +133,10 @@ Les métadonnées ne sont relues depuis le fichier qu'au changement de piste (ca
 
 ## Normalisation EBU R128
 
-Chaque fichier est analysé une fois (gain calculé pour atteindre −14.0 LUFS) puis mis en cache. Le gain est appliqué en combinaison avec le volume utilisateur et le limiteur :
+Chaque fichier est analysé une fois (gain calculé pour atteindre −14.0 LUFS) puis mis en cache. Le gain est appliqué en combinaison avec le volume utilisateur :
 
 ```
-volume_final = volume_utilisateur × gain_normalisation × gain_limiteur
+volume_final = volume_utilisateur × gain_normalisation
 ```
 
 Quand la normalisation est **désactivée**, `gain_normalisation = 1.0` (volume brut du fichier). Le cache reste intact — réactiver la normalisation n'implique pas de ré-analyse.

@@ -15,9 +15,6 @@ pub struct EnvConfig {
     #[serde(rename = "VOLUME")]
     pub volume: Option<f32>,
 
-    #[serde(rename = "LIMITER_DB")]
-    pub limiter_db: Option<f32>,
-
     #[serde(rename = "janusCoreGui")]
     pub janus_core_gui: Option<bool>,
 
@@ -34,7 +31,6 @@ impl Default for EnvConfig {
             port_music: Some(3030),
             port_soundboard: Some(3003),
             volume: Some(1.0),
-            limiter_db: Some(0.0),
             janus_core_gui: Some(true),
             phonos_core_gui: Some(true),
             normalization_enabled: Some(true),
