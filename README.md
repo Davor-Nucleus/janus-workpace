@@ -1,19 +1,48 @@
-# Janus Core Workspace
+<div align="center">
+  <!-- TODO: Insérer le logo du projet ici si vous en avez un -->
+  <!-- <img src="public/logo.png" alt="Janus Core Logo" width="200"/> -->
+
+  # 🎵 Janus Core Workspace
+
+  **L'infrastructure audio pour le système de contrôle de stream, avec gestion de la musique et du soundboard.**
+
+  [![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)](#)
+  [![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](#)
+</div>
+
+---
 
 Ce workspace Cargo contient l'infrastructure audio pour le système de contrôle de stream. Il est composé de trois membres principaux :
 
-1. **JanusCore** : Le serveur de lecture de musique (MP3/FLAC/WAV/AAC/MP4) avec normalisation EBU R128.
-2. **PhonosCore** : Le serveur de soundboard (effets sonores, sans normalisation automatique). 
-3. **janus_nucleus** : Une bibliothèque partagée contenant la logique de configuration, de journalisation (logs) et d'interface graphique (GUI).
+1. 🎵 **JanusCore** : Le serveur de lecture de musique (MP3/FLAC/WAV/AAC/MP4) avec normalisation EBU R128.
+2. 🔊 **PhonosCore** : Le serveur de soundboard (effets sonores, sans normalisation automatique). 
+3. ⚙️ **janus_nucleus** : Une bibliothèque partagée contenant la logique de configuration, de journalisation (logs) et d'interface graphique (GUI).
 
-## Prérequis
+## 📋 Sommaire
 
-* Rust (installé via rustup)
-* Windows (pour l'interface graphique winapi, bien que le code de base soit portable)
+- [Prérequis](#-prérequis)
+- [Architecture](#-architecture)
+- [Configuration](#-configuration)
+- [Démarrage](#-démarrage)
+- [Fonctionnalités](#-fonctionnalités)
+- [Développement](#-développement)
 
-## Structure du Projet
+---
 
-```
+## ⚡ Prérequis
+
+> [!IMPORTANT]
+> - **Rust** (installé via rustup)
+> - **Windows** (pour l'interface graphique winapi, bien que le code de base soit portable)
+
+---
+
+## 🏗️ Architecture
+
+<details>
+<summary><b>Cliquez pour dérouler l'arborescence du projet</b></summary>
+
+```text
 janus core/
 ├── JanusCore/           # Serveur Musique
 │   ├── src/             # Code source
@@ -23,17 +52,21 @@ janus core/
 │   ├── src/             # Code source
 │   ├── public/soundboard/ # Fichiers audio
 │   └── env.json         # Configuration PhonosCore
-├── janus_nucleus/        # Lib partagée (Config, Logger, GUI)
+├── janus_nucleus/       # Lib partagée (Config, Logger, GUI)
 │   └── src/             # Code source commun
 ├── Cargo.toml           # Configuration workspace
 └── Cargo.lock           # Verrouillage des dépendances
 ```
+</details>
 
-## Configuration
+---
+
+## ⚙️ Configuration
 
 Chaque projet possède son propre fichier `env.json` dans son répertoire respectif.
 
-### JanusCore (`JanusCore/env.json`)
+<details>
+<summary><b>JanusCore (<code>JanusCore/env.json</code>)</b></summary>
 
 ```json
 {
@@ -43,8 +76,10 @@ Chaque projet possède son propre fichier `env.json` dans son répertoire respec
   "normalizationEnabled": true
 }
 ```
+</details>
 
-### PhonosCore (`PhonosCore/env.json`)
+<details>
+<summary><b>PhonosCore (<code>PhonosCore/env.json</code>)</b></summary>
 
 ```json
 {
@@ -53,17 +88,20 @@ Chaque projet possède son propre fichier `env.json` dans son répertoire respec
   "phonosCoreGui": true
 }
 ```
+</details>
 
 ### Paramètres de Configuration
 
-* **PORT_MUSIC** : Port API pour JanusCore (défaut: 3030 si non spécifié).
-* **PORT_SOUNDBOARD** : Port API pour PhonosCore (défaut: 3003 si non spécifié).
-* **janusCoreGui** : Active/Désactive la fenêtre de logs native pour JanusCore (défaut: true).
-* **phonosCoreGui** : Active/Désactive la fenêtre de logs native pour PhonosCore (défaut: true).
-* **VOLUME** : Volume global initial (0.0 à 1.0).
-* **normalizationEnabled** : Active la normalisation EBU R128 au démarrage pour JanusCore (défaut: true).
+- `PORT_MUSIC` : Port API pour JanusCore (défaut: 3030 si non spécifié).
+- `PORT_SOUNDBOARD` : Port API pour PhonosCore (défaut: 3003 si non spécifié).
+- `janusCoreGui` : Active/Désactive la fenêtre de logs native pour JanusCore (défaut: true).
+- `phonosCoreGui` : Active/Désactive la fenêtre de logs native pour PhonosCore (défaut: true).
+- `VOLUME` : Volume global initial (0.0 à 1.0).
+- `normalizationEnabled` : Active la normalisation EBU R128 au démarrage pour JanusCore (défaut: true).
 
-## Démarrage
+---
+
+## 🚀 Démarrage
 
 ### Lancer tout le workspace (vérification uniquement)
 
@@ -83,8 +121,8 @@ cargo build --workspace
 cd JanusCore
 cargo run
 ```
-
-**API** : `http://127.0.0.1:3001` (ou port configuré dans `env.json`)
+> [!NOTE]
+> **API** : `http://127.0.0.1:3001` (ou port configuré dans `env.json`)
 
 ### Lancer PhonosCore (Soundboard)
 
@@ -92,84 +130,70 @@ cargo run
 cd PhonosCore
 cargo run
 ```
+> [!NOTE]
+> **API** : `http://127.0.0.1:3002` (ou port configuré dans `env.json`)
 
-**API** : `http://127.0.0.1:3002` (ou port configuré dans `env.json`)
+---
 
-## Fonctionnalités
+## 🌟 Fonctionnalités
 
-### JanusCore (Musique)
+### 🎵 JanusCore (Musique)
 
 #### Lecture et Navigation
-* **Lecture de dossier** : `GET /api/folder?folder=NomDossier`
-  * Lance la lecture d'un dossier de musique depuis `public/music/`
-* **Liste des dossiers** : `GET /api/folderlist`
-  * Retourne la liste de tous les dossiers disponibles dans `public/music/`
+- **Lecture de dossier** : `GET /api/folder?folder=NomDossier` (Lance la lecture depuis `public/music/`)
+- **Liste des dossiers** : `GET /api/folderlist` (Retourne tous les dossiers de `public/music/`)
 
 #### Contrôle de Lecture
-* **Pause** : `GET /api/pause`
-* **Reprendre** : `GET /api/resume`
-* **Arrêter** : `GET /api/stop`
-* **Piste suivante** : `GET /api/next`
-* **Piste précédente** : `GET /api/previous`
-* **Vérifier piste suivante** : `GET /api/has_next`
-  * Retourne `true`/`false` selon la disponibilité
-* **Vérifier piste précédente** : `GET /api/has_previous`
-  * Retourne `true`/`false` selon la disponibilité
+- **Pause** : `GET /api/pause`
+- **Reprendre** : `GET /api/resume`
+- **Arrêter** : `GET /api/stop`
+- **Piste suivante** : `GET /api/next`
+- **Piste précédente** : `GET /api/previous`
+- **Vérifier piste suivante** : `GET /api/has_next` (Retourne `true`/`false`)
+- **Vérifier piste précédente** : `GET /api/has_previous` (Retourne `true`/`false`)
 
 #### Volume
-* **Obtenir le volume** : `GET /api/volume`
-  * Retourne le volume actuel (0.0 à 1.0)
-* **Définir le volume** : `POST /api/volume`
-  * Corps: `{"volume": 0.5}`
-* **Augmenter le volume** : `GET /api/volume/add`
-* **Diminuer le volume** : `GET /api/volume/subtract`
+- **Obtenir le volume** : `GET /api/volume` (0.0 à 1.0)
+- **Définir le volume** : `POST /api/volume` (Corps: `{"volume": 0.5}`)
+- **Augmenter le volume** : `GET /api/volume/add`
+- **Diminuer le volume** : `GET /api/volume/subtract`
 
 #### Normalisation EBU R128
-* **État de la normalisation** : `GET /api/normalization`
-  * Retourne `{ "normalization_enabled": true/false }`
-* **Activer / désactiver** : `POST /api/normalization`
-  * Corps : `{ "enabled": false }`
-* **Basculer** : `GET /api/normalization/toggle`
-  * Inverse l'état courant, persiste dans `env.json`
+- **État** : `GET /api/normalization` (Retourne `{ "normalization_enabled": true/false }`)
+- **Activer / désactiver** : `POST /api/normalization` (Corps : `{ "enabled": false }`)
+- **Basculer** : `GET /api/normalization/toggle` (Inverse l'état courant, persiste dans `env.json`)
 
 #### État et Informations
-* **État actuel** : `GET /api/status`
-  * Retourne l'état complet : pause, volume, titre en cours, etc.
-* **Musique actuelle** : `GET /api/current_music`
-  * Retourne les informations sur la piste en cours de lecture
-* **WebSocket musique actuelle** : `WS /api/current_music_ws`
-  * Connexion WebSocket pour recevoir les mises à jour en temps réel de la musique en cours
+- **État actuel** : `GET /api/status` (Retourne pause, volume, titre en cours, etc.)
+- **Musique actuelle** : `GET /api/current_music`
+- **WebSocket musique** : `WS /api/current_music_ws` (Mises à jour en temps réel)
 
-### PhonosCore (Soundboard)
+### 🔊 PhonosCore (Soundboard)
 
-* **Jouer un son** : `GET /api/soundboard/play?sound=nom_fichier`
-  * Joue un fichier audio depuis `public/soundboard/`
-  * **Note** : Met automatiquement la musique de JanusCore en pause et la reprend à la fin du son.
-* **Lister les sons** : `GET /api/soundboard/sounds`
-  * Retourne la liste de tous les fichiers audio disponibles
-* **Arrêter le son** : `GET /api/soundboard/stop`
-  * Arrête la lecture en cours et reprend la musique de JanusCore
+- **Jouer un son** : `GET /api/soundboard/play?sound=nom_fichier`
+  - Joue depuis `public/soundboard/`.
+  - **Met automatiquement la musique de JanusCore en pause** et la reprend à la fin.
+- **Lister les sons** : `GET /api/soundboard/sounds`
+- **Arrêter le son** : `GET /api/soundboard/stop` (Arrête le son et reprend la musique)
 
-### Audio
+### 🎧 Audio
 
 #### Formats Supportés
+**JanusCore** (avec normalisation) et **PhonosCore** (sans normalisation) supportent les formats suivants :
+- MP3
+- FLAC
+- WAV
+- AAC
+- MP4 (ISOM4)
 
-**JanusCore** supporte les formats suivants :
-* MP3
-* FLAC
-* WAV
-* AAC
-* MP4 (ISOM4)
+---
 
-**PhonosCore** supporte les mêmes formats **sans** normalisation automatique (volume brut des fichiers).
-
-## Développement
+## 🛠️ Développement
 
 ### Logs
-
 Les logs sont affichés dans :
-* Une fenêtre dédiée native Windows (si GUI activée dans `env.json`)
-* La console standard
+- Une fenêtre dédiée native Windows (si GUI activée dans `env.json`)
+- La console standard
 
 ### Compilation
 
@@ -184,15 +208,19 @@ cargo build --workspace --release
 cargo check --workspace
 ```
 
-### Architecture
-
-* **Warp** : Framework HTTP asynchrone pour les API REST
-* **Rodio** : Bibliothèque audio pour la lecture de fichiers
-* **Symphonia** : Décodage audio multi-format
-* **EBUR128** : Normalisation audio selon la norme EBU R128
-* **Tokio** : Runtime asynchrone pour Rust
-* **Serde/Serde JSON** : Sérialisation/désérialisation JSON
+### Architecture Interne
+- **Warp** : Framework HTTP asynchrone pour les API REST
+- **Rodio** : Bibliothèque audio pour la lecture de fichiers
+- **Symphonia** : Décodage audio multi-format
+- **EBUR128** : Normalisation audio selon la norme EBU R128
+- **Tokio** : Runtime asynchrone pour Rust
+- **Serde/Serde JSON** : Sérialisation/désérialisation JSON
 
 ### CORS
-
 Les deux serveurs ont le support CORS activé pour permettre les requêtes depuis des applications web frontend.
+
+---
+
+<div align="center">
+  <i>Développé avec ❤️ en Rust</i>
+</div>

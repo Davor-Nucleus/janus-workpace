@@ -21,4 +21,3 @@ janus_nucleus = { path = "../janus_nucleus" }
 
 [build-dependencies]
 winres = "0.1"
-
