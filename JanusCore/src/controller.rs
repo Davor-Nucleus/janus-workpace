@@ -4,7 +4,7 @@ use futures::{SinkExt, StreamExt};
 use serde_json;
 use std::{
     collections::HashMap,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -201,15 +201,14 @@ impl PlayerController {
         ))
     }
 
-    /// Return the name of the currently playing track, or a message if none.
+    /// Return metadata (title, artist, album, date, cover_art) of the currently playing track.
     pub async fn handle_current_music(
         player: Arc<Mutex<PlayerState>>,
     ) -> Result<impl Reply, std::convert::Infallible> {
         let p = player.lock().unwrap();
-        if let Some(music_name) = p.get_current_music_name() {
-            let response = serde_json::json!({ "current_music": music_name });
+        if let Some(metadata) = p.get_current_music_metadata() {
             Ok(warp::reply::with_status(
-                warp::reply::json(&response),
+                warp::reply::json(&metadata),
                 warp::http::StatusCode::OK,
             ))
         } else {
@@ -229,19 +228,28 @@ impl PlayerController {
         Ok(ws.on_upgrade(move |socket| async move {
             let (mut tx, mut rx) = socket.split();
 
-            // ignorer les messages entrants pour l'instant
             tokio::spawn(async move {
-                while let Some(_msg) = rx.next().await {
-                    // noop
-                }
+                while let Some(_msg) = rx.next().await {}
             });
 
-            // envoi périodique si changement d'état (utilise Debug pour sérialiser)
             let mut last: Option<String> = None;
+            // Cache metadata par chemin : ne relit le fichier que lors d'un changement de piste
+            let mut last_path: Option<PathBuf> = None;
+            let mut cached_meta: serde_json::Value = serde_json::Value::Null;
+
             loop {
                 let snapshot = {
                     let guard = player.lock().unwrap();
-                    let current_music = guard.get_current_music_name();
+                    let current_path = guard.current_file.clone();
+
+                    if current_path != last_path {
+                        cached_meta = match guard.get_current_music_metadata() {
+                            Some(m) => serde_json::to_value(&m).unwrap_or(serde_json::Value::Null),
+                            None => serde_json::Value::Null,
+                        };
+                        last_path = current_path;
+                    }
+
                     let has_next = !guard.queue.is_empty() || guard.current_file.is_some();
                     serde_json::json!({
                         "queue_len": guard.queue.len(),
@@ -249,16 +257,17 @@ impl PlayerController {
                         "paused": guard.paused,
                         "volume": guard.volume,
                         "limiter_db": guard.limiter_db,
-                        "current_music": current_music,
+                        "current_music": guard.get_current_music_name(),
                         "has_next": has_next,
                         "history_len": guard.history.len(),
+                        "metadata": cached_meta,
                     })
                     .to_string()
                 };
 
                 if last.as_ref().map(|s| s != &snapshot).unwrap_or(true) {
                     if tx.send(Message::text(snapshot.clone())).await.is_err() {
-                        break; // client déconnecté
+                        break;
                     }
                     last = Some(snapshot);
                 }

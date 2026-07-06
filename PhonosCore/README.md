@@ -2,7 +2,7 @@
 
 ## Présentation
 
-Le PhonosCore est un player mp3 qui lit des effets sonores stockés localement en Rust.
+Le PhonosCore est un player headless qui lit des effets sonores stockés localement en Rust.
 
 
 ## 🎵 Fonctionnalités

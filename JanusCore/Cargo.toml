@@ -16,6 +16,7 @@ serde = { version = "1", features = ["derive"] }
 reqwest = { version = "0.11", features = ["blocking"] }
 symphonia = { version = "0.5", features = ["mp3", "wav", "flac", "aac", "isomp4"] }
 futures = "0.3.31"
+base64 = "0.21"
 janus_common = { path = "../janus_common" }
 
 [build-dependencies]

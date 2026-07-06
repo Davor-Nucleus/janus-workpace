@@ -1,183 +1,173 @@
-# JanusCore Player
+# JanusCore
 
-Un lecteur JanusCore en Rust pour la lecture audio.
+Serveur audio headless en Rust pour la lecture de musique. Conçu pour être contrôlé via une API REST et intégré à des overlays OBS via WebSocket.
 
-## 🎵 Fonctionnalités
+## Fonctionnalités
 
-- **Lecture audio** : Support MP3, WAV, FLAC
-- **API REST** : Interface HTTP complète pour contrôler le lecteur
-- **Gestion des playlists** : Navigation avant/arrière, mélange aléatoire
-- **Limiteur audio** : Limitation du volume maximum en dB pour éviter la saturation
-- **Fenêtre GUI de logs (Windows)** : Affichage en temps réel des logs dans une petite fenêtre optionnelle
-  - Activation via `env.json` → `janusCoreGui: true` (par défaut)
-  - Fermeture de la fenêtre = arrêt propre de l’application (serveur + tâches)
-  - Icône personnalisée chargée depuis `favicon.ico`
+- **Formats supportés** : MP3, FLAC, WAV, AAC, MP4 (via Symphonia)
+- **Playlists par dossier** : chargement et lecture aléatoire d'un dossier entier
+- **Navigation** : piste suivante / précédente avec historique
+- **Normalisation EBU R128** : analyse automatique de la loudness à −14.0 LUFS avec cache
+- **Limiteur audio** : plafond en dB configurable pour éviter la saturation
+- **Métadonnées** : lecture des tags ID3/Vorbis (titre, artiste, album, date, pochette en base64)
+- **WebSocket** : flux temps réel de l'état du lecteur pour les overlays
+- **Fenêtre de logs Windows** : fenêtre Win32 optionnelle affichant les logs en temps réel
 
-## 🚀 Installation
+## Configuration
 
-```bash
-# Cloner le projet
-git clone <repository-url>
-cd JanusCore
-
-# Installer les dépendances
-cargo build
-
-# Lancer le serveur
-cargo run
-```
-
-## 📁 Structure des dossiers
-
-```
-JanusCore/
-├── public/music/          # Dossiers de musique
-│   ├── rock/             # Exemple de dossier
-│   ├── jazz/             # Exemple de dossier
-│   └── classical/        # Exemple de dossier
-├── src/                  # Code source
-├── Cargo.toml           # Dépendances
-└── env.json             # Configuration
-```
-
-## 🔧 Configuration
-
-Créez un fichier `env.json` à la racine :
+Créez `env.json` à la racine du binaire :
 
 ```json
 {
-  "PORT_MUSIC": 3000,
+  "PORT_MUSIC": 3001,
   "VOLUME": 0.8,
   "LIMITER_DB": 0.0,
   "janusCoreGui": true
 }
 ```
 
-### Clé `janusCoreGui`
-- `true` (défaut) : ouvre une fenêtre GUI "JanusCore - Logs" et y affiche tous les logs (les logs restent aussi visibles dans la console)
-- `false` : pas de fenêtre GUI, logs uniquement en console (mode 100% terminal)
+| Clé | Type | Description |
+|-----|------|-------------|
+| `PORT_MUSIC` | int | Port HTTP du serveur |
+| `VOLUME` | float (0.0–1.0) | Volume initial |
+| `LIMITER_DB` | float | Plafond en dB (0.0 = pas de limite) |
+| `janusCoreGui` | bool | Ouvre la fenêtre de logs Win32 |
 
-## 🌐 API Endpoints
+## Structure des dossiers
 
-### Contrôle de lecture
+```
+JanusCore/
+├── public/music/      # Dossiers de musique (un dossier = une playlist)
+│   ├── rock/
+│   └── jazz/
+├── src/
+├── Cargo.toml
+└── env.json
+```
 
-- `POST /api/folder?folder=rock` - Lire un dossier
-- `POST /api/stop` - Arrêter la lecture
-- `POST /api/pause` - Pause/Reprendre
-- `POST /api/next` - Piste suivante
-- `POST /api/previous` - Piste précédente
+## API REST
+
+Toutes les routes sont en **GET** sauf indication contraire.
+
+### Lecture
+
+| Route | Description |
+|-------|-------------|
+| `GET /api/folderlist` | Liste des dossiers disponibles sous `public/music/` |
+| `GET /api/folder?folder=<nom>` | Charge et lance la lecture d'un dossier |
+| `GET /api/pause` | Met en pause |
+| `GET /api/resume` | Reprend la lecture |
+| `GET /api/stop` | Arrête et vide la playlist |
+| `GET /api/next` | Piste suivante |
+| `GET /api/previous` | Piste précédente |
+| `GET /api/has_next` | `{ "has_next": bool, "queue_length": int, "current_music": str }` |
+| `GET /api/has_previous` | `{ "has_previous": bool, "previous_music": str }` |
 
 ### Volume
 
-- `GET /api/volume` - Obtenir le volume actuel
-- `POST /api/volume` - Définir le volume (JSON: `{"volume": 0.8}`)
-- `GET /api/volume/add` - Augmenter le volume (+0.05)
-- `GET /api/volume/subtract` - Diminuer le volume (-0.05)
+| Route | Description |
+|-------|-------------|
+| `GET /api/volume` | `{ "volume": float }` |
+| `POST /api/volume` | Body : `{ "volume": 0.8 }` |
+| `GET /api/volume/add` | +0.05 |
+| `GET /api/volume/subtract` | −0.05 |
 
 ### Limiteur
 
-Le limiteur empêche le volume de dépasser une valeur maximale en dB. Si le volume en dB dépasse la limite, il est automatiquement réduit.
+| Route | Description |
+|-------|-------------|
+| `GET /api/limiter` | `{ "limiter": float }` |
+| `POST /api/limiter` | Body : `{ "limiter_db": -6.0 }` |
+| `GET /api/limiter/add` | +1.0 dB |
+| `GET /api/limiter/subtract` | −1.0 dB |
 
-- `GET /api/limiter` - Obtenir la limite actuelle en dB
-- `POST /api/limiter` - Définir la limite (JSON: `{"limiter_db": -6.0}`)
-- `GET /api/limiter/add` - Augmenter la limite (+1.0 dB)
-- `GET /api/limiter/subtract` - Diminuer la limite (-1.0 dB)
-
-**Note** : Une valeur de `0.0` dB signifie aucune limitation (volume maximum). Des valeurs négatives (ex: `-6.0` dB) limitent le volume à environ 50% du maximum.
+Une valeur `0.0` dB = aucun plafond. Des valeurs négatives réduisent le volume maximum (ex. `−6.0` dB ≈ 50%).
 
 ### Informations
 
-- `GET /api/folderlist` - Liste des dossiers disponibles
-- `GET /api/current-music` - Musique en cours
-- `GET /api/has-next` - Vérifier s'il y a une piste suivante
-- `GET /api/has-previous` - Vérifier s'il y a une piste précédente
+| Route | Description |
+|-------|-------------|
+| `GET /api/status` | État complet : `{ "paused", "current_music", "volume" }` |
+| `GET /api/current_music` | Métadonnées de la piste en cours (voir ci-dessous) |
+| `WS  /api/current_music_ws` | Flux WebSocket de l'état du lecteur |
 
-## 🛠️ Développement
+#### Réponse de `/api/current_music`
 
-### Structure du code
+```json
+{
+  "filename": "04 - Theme.mp3",
+  "title": "Theme",
+  "artist": "Evan Call",
+  "album": "OST",
+  "date": "2023",
+  "cover_art": "data:image/jpeg;base64,/9j/..."
+}
+```
 
-- `src/model.rs` - Logique métier
-- `src/controller.rs` - Gestionnaires HTTP
-- `src/routes.rs` - Définition des routes API
-- `src/service.rs` - Services métier
-- `src/main.rs` - Point d'entrée et configuration
-- `src/ui.rs` - Fenêtre Win32 minimaliste pour afficher les logs
-- `src/logger.rs` - Logger centralisé (console + GUI si activée)
+Les champs `title`, `artist`, `album`, `date`, `cover_art` sont `null` si absents des tags du fichier.  
+Si aucune musique ne joue : `{ "message": "Aucune musique en cours de lecture." }`
 
-### Ajouter un nouveau format audio
+#### Payload WebSocket (`/api/current_music_ws`)
 
-1. Ajouter l'extension dans `add_folder()` (src/model.rs)
-2. Vérifier la compatibilité avec rodio
-3. Tester avec des fichiers du nouveau format
+Envoyé à chaque changement d'état (polling 500 ms) :
 
-## 🧪 Tests
+```json
+{
+  "queue_len": 12,
+  "has_sink": true,
+  "paused": false,
+  "volume": 0.8,
+  "limiter_db": 0.0,
+  "current_music": "04 - Theme.mp3",
+  "has_next": true,
+  "history_len": 3,
+  "metadata": {
+    "filename": "04 - Theme.mp3",
+    "title": "Theme",
+    "artist": "Evan Call",
+    "album": "OST",
+    "date": "2023",
+    "cover_art": "data:image/jpeg;base64,..."
+  }
+}
+```
+
+Les métadonnées ne sont relues depuis le fichier qu'au changement de piste (cache par chemin).
+
+## Normalisation EBU R128
+
+Chaque fichier est analysé une fois (gain calculé pour atteindre −14.0 LUFS) puis mis en cache. Le gain est appliqué en combinaison avec le volume utilisateur et le limiteur :
+
+```
+volume_final = volume_utilisateur × gain_normalisation × gain_limiteur
+```
+
+## Fenêtre GUI (Windows)
+
+Avec `janusCoreGui: true` :
+- Une fenêtre Win32 "JanusCore - Logs" s'ouvre au démarrage
+- Les logs s'y affichent en temps réel (et restent aussi dans la console)
+- Fermer la fenêtre déclenche un arrêt propre du serveur
+
+Avec `janusCoreGui: false` : logs console uniquement.
+
+## Build
 
 ```bash
-# Vérifier la compilation
-cargo check
-
-# Lancer les tests
-cargo test
-
-# Build de production
-cargo build --release
+# Depuis le workspace janus core/
+cargo build -p JanusCore --release
 ```
 
-## 📝 Logs
+Le binaire est dans `target/release/JanusCore.exe`.
 
-Le système affiche des informations utiles :
+## Structure du code
 
-```
-Lecture : song.mp3
-```
+| Fichier | Rôle |
+|---------|------|
+| `src/main.rs` | Point d'entrée, démarrage du serveur |
+| `src/model.rs` | `PlayerState`, logique de playlist, lecture de métadonnées |
+| `src/controller.rs` | Handlers HTTP et WebSocket |
+| `src/routes.rs` | Définition des routes Warp |
+| `src/service.rs` | Thread d'auto-play |
 
-Avec `janusCoreGui: true`, ces logs apparaissent aussi dans la fenêtre "JanusCore - Logs".
-
-## 🪟 Fenêtre GUI et arrêt propre
-
-- Une petite fenêtre Win32 affiche les logs et est rafraîchie périodiquement.
-- Quand vous fermez la fenêtre, l'application déclenche un arrêt gracieux du serveur HTTP et des tâches en arrière-plan, puis se termine.
-- Avec `janusCoreGui: false`, cette fenêtre n’est pas lancée.
-
-## 🖼️ Icône Windows
-
-- L’icône de l’application est embarquée via `build.rs` et `winres`, en pointant sur `favicon.ico` à la racine.
-- Pour être certain que l’icône apparaisse dans la barre des tâches et la barre de titre, la fenêtre charge l’icône intégrée (resource id 1) et la définit explicitement (`WM_SETICON`).
-- Construire en release:
-
-```bash
-cargo build --release
-```
-
-Si l’icône ne s’affiche pas :
-- Vérifiez que `favicon.ico` contient au moins 16×16 et 32×32.
-- `cargo clean && cargo build --release`
-
-## 🎥 Capture audio (OBS sous Windows 11)
-
-- Essayez "Capture audio d’application (bêta)".
-- Sinon, utilisez "Capture audio du bureau (WASAPI)" en sélectionnant le périphérique de sortie utilisé par l’app.
-- Option: routez la sortie vers un périphérique virtuel (VB-Audio Cable) et capturez ce périphérique dans OBS.
-
-## 🔮 Améliorations futures
-
-- [ ] Interface web pour contrôler le lecteur
-- [ ] Analyse audio complète avec Symphonia
-- [ ] Métadonnées audio (ID3, etc.)
-- [ ] Streaming en temps réel
-- [ ] Support des playlists personnalisées
-
-## 📄 Licence
-
-Ce projet est sous licence MIT.
-
-## 🤝 Contribution
-
-Les contributions sont les bienvenues ! N'hésitez pas à :
-
-1. Signaler des bugs
-2. Proposer des améliorations
-3. Soumettre des pull requests
-4. Améliorer la documentation
-
-
+Les utilitaires partagés (normalisation EBU R128, config, logger, GUI) sont dans le crate `janus_common`.

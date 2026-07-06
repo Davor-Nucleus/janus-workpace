@@ -7,10 +7,25 @@ use janus_common::config::update_config_key;
 use janus_common::logger::{log_error, log_info};
 use rand::seq::SliceRandom;
 use rodio::{Decoder, Sink};
-use serde::Deserialize;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use serde::{Deserialize, Serialize};
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::{MetadataOptions, StandardTagKey};
+use symphonia::core::probe::Hint;
 use std::{
     collections::VecDeque, fmt, fs::File, io::BufReader, path::Path, path::PathBuf, sync::Arc,
 };
+
+#[derive(Serialize)]
+pub struct MusicMetadata {
+    pub filename: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub date: Option<String>,
+    pub cover_art: Option<String>,
+}
 
 #[derive(Deserialize)]
 /// JSON request body for updating the player volume.
@@ -278,6 +293,95 @@ impl PlayerState {
             .and_then(|path| path.file_name())
             .and_then(|name| name.to_str())
             .map(|s| s.to_string())
+    }
+
+    /// Read and return ID3/Vorbis metadata from the current file.
+    /// Falls back gracefully to filename-only if tags are absent or unreadable.
+    pub fn get_current_music_metadata(&self) -> Option<MusicMetadata> {
+        let path = self.current_file.as_ref()?;
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        let mut meta = MusicMetadata {
+            filename,
+            title: None,
+            artist: None,
+            album: None,
+            date: None,
+            cover_art: None,
+        };
+
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(_) => return Some(meta),
+        };
+
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let mut hint = Hint::new();
+        if let Some(ext) = path.extension() {
+            hint.with_extension(&ext.to_string_lossy());
+        }
+
+        let mut probed = match symphonia::default::get_probe().format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        ) {
+            Ok(p) => p,
+            Err(_) => return Some(meta),
+        };
+
+        // probed.metadata   : Option<Metadata<'_>> → .current() → Option<&MetadataRevision>
+        // probed.format     : Metadata<'_>        → .current() → Option<&MetadataRevision>
+        // Les deux doivent être stockés en bindings pour que les lifetimes tiennent.
+
+        let probe_meta = probed.metadata.get();
+        let probe_rev = probe_meta.as_ref().and_then(|m| m.current());
+
+        let fmt_meta = probed.format.metadata();
+        let format_rev = fmt_meta.current();
+
+        for rev in [probe_rev, format_rev].into_iter().flatten() {
+            if meta.title.is_some() && meta.artist.is_some() && meta.cover_art.is_some() {
+                break;
+            }
+            Self::fill_from_revision(rev, &mut meta);
+        }
+
+        Some(meta)
+    }
+
+    fn fill_from_revision(
+        rev: &symphonia::core::meta::MetadataRevision,
+        meta: &mut MusicMetadata,
+    ) {
+        for tag in rev.tags() {
+            match tag.std_key {
+                Some(StandardTagKey::TrackTitle) => {
+                    meta.title.get_or_insert_with(|| tag.value.to_string());
+                }
+                Some(StandardTagKey::Artist) => {
+                    meta.artist.get_or_insert_with(|| tag.value.to_string());
+                }
+                Some(StandardTagKey::Album) => {
+                    meta.album.get_or_insert_with(|| tag.value.to_string());
+                }
+                Some(StandardTagKey::Date) => {
+                    meta.date.get_or_insert_with(|| tag.value.to_string());
+                }
+                _ => {}
+            }
+        }
+        if meta.cover_art.is_none() {
+            if let Some(visual) = rev.visuals().first() {
+                let encoded = STANDARD.encode(&*visual.data);
+                meta.cover_art = Some(format!("data:{};base64,{}", visual.media_type, encoded));
+            }
+        }
     }
 
     // Méthode pour jouer la piste précédente
