@@ -72,14 +72,21 @@ impl PlayerController {
                 let player = player.clone();
                 let music_port = music_port;
                 move || {
+
+                    let is_active_normalization = false;
+
                     // Calculer le gain de normalisation (peut prendre un peu de temps au premier scan)
+                    // Normalisation désactivée pour PhonosCore :
+                    // on joue désormais les sons à leur volume brut (pas de EBU R128 ici).
                     let normalization_gain = {
-                        if let Ok(p) = player.lock() {
+                        if let Ok(p) = player.lock() && is_active_normalization {
                             p.normalization_manager.get_or_compute_gain(&file_path)
                         } else {
                             1.0
                         }
                     };
+
+                    
 
                     // Récupérer le stream_handle du player principal
                     let stream_handle = {
