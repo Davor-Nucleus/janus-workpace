@@ -17,7 +17,16 @@ use crate::logger::get_global_log_buffer_ptr;
 pub struct LogWindowHandle;
 
 impl LogWindowHandle {
-    pub fn spawn(log_buffer: Arc<Mutex<String>>, on_close: Sender<()>) {
+    /// Lance une fenêtre de logs native Windows.
+    ///
+    /// - `window_title`: titre de la fenêtre (ex: "JanusCore - Logs", "PhonosCore - Logs")
+    /// - `class_name`: nom de classe Win32 (doit être unique par type de fenêtre)
+    pub fn spawn(
+        log_buffer: Arc<Mutex<String>>,
+        on_close: Sender<()>,
+        window_title: String,
+        class_name: String,
+    ) {
         // Définir le buffer global au démarrage de la fenêtre pour être sûr
         // Note: l'appelant a probablement déjà appelé set_global_log_buffer_ptr
         // Mais on garde une référence ici pour que `spawn` soit le point d'entrée
@@ -35,9 +44,9 @@ impl LogWindowHandle {
             unsafe {
                 let hinstance = GetModuleHandleW(std::ptr::null());
 
-                // Nom de classe et titre
-                let class_name = U16CString::from_str("JanusCoreLogWndClass").unwrap();
-                let window_title = U16CString::from_str("JanusCore - Logs").unwrap();
+                // Nom de classe et titre (dépendants du binaire appelant)
+                let class_name_w = U16CString::from_str(&class_name).unwrap();
+                let window_title_w = U16CString::from_str(&window_title).unwrap();
 
                 let hicon = LoadIconW(hinstance, MAKEINTRESOURCEW(1));
 
@@ -55,14 +64,14 @@ impl LogWindowHandle {
                     hCursor: LoadCursorW(null_mut(), IDC_ARROW),
                     hbrBackground: GetStockObject(WHITE_BRUSH as i32) as HBRUSH,
                     lpszMenuName: null_mut(),
-                    lpszClassName: class_name.as_ptr(),
+                    lpszClassName: class_name_w.as_ptr(),
                 };
                 RegisterClassW(&wnd_class);
 
                 let hwnd = CreateWindowExW(
                     0,
-                    class_name.as_ptr(),
-                    window_title.as_ptr(),
+                    class_name_w.as_ptr(),
+                    window_title_w.as_ptr(),
                     WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                     CW_USEDEFAULT,
                     CW_USEDEFAULT,

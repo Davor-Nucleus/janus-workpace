@@ -33,7 +33,12 @@ async fn main() {
     let (close_tx, close_rx) = std::sync::mpsc::channel::<()>();
     if gui_enabled {
         let log_buffer: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-        LogWindowHandle::spawn(log_buffer, close_tx);
+        LogWindowHandle::spawn(
+            log_buffer,
+            close_tx,
+            "JanusCore - Logs".to_string(),
+            "JanusCoreLogWndClass".to_string(),
+        );
     }
 
     // initial_volume et port déjà lus ci-dessus

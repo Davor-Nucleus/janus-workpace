@@ -70,8 +70,14 @@ async fn main() {
 
     #[cfg(windows)]
     if gui_enabled_default_true {
-        let log_buf = precreated_log_buf.expect("log buffer should be precreated when GUI enabled");
-        janus_common::gui::LogWindowHandle::spawn(log_buf.clone(), shutdown_tx.clone());
+        let log_buf =
+            precreated_log_buf.expect("log buffer should be precreated when GUI enabled");
+        janus_common::gui::LogWindowHandle::spawn(
+            log_buf.clone(),
+            shutdown_tx.clone(),
+            "PhonosCore - Logs".to_string(),
+            "PhonosCoreLogWndClass".to_string(),
+        );
     }
 
     // Warp graceful shutdown si GUI active
