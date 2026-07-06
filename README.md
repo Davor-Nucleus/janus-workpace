@@ -4,7 +4,7 @@ Ce workspace Cargo contient l'infrastructure audio pour le système de contrôle
 
 1. **JanusCore** : Le serveur de lecture de musique (MP3/FLAC/WAV/AAC/MP4) avec normalisation EBU R128.
 2. **PhonosCore** : Le serveur de soundboard (effets sonores, sans normalisation automatique). 
-3. **janus_common** : Une bibliothèque partagée contenant la logique de configuration, de journalisation (logs) et d'interface graphique (GUI).
+3. **janus_nucleus** : Une bibliothèque partagée contenant la logique de configuration, de journalisation (logs) et d'interface graphique (GUI).
 
 ## Prérequis
 
@@ -23,7 +23,7 @@ janus core/
 │   ├── src/             # Code source
 │   ├── public/soundboard/ # Fichiers audio
 │   └── env.json         # Configuration PhonosCore
-├── janus_common/        # Lib partagée (Config, Logger, GUI)
+├── janus_nucleus/        # Lib partagée (Config, Logger, GUI)
 │   └── src/             # Code source commun
 ├── Cargo.toml           # Configuration workspace
 └── Cargo.lock           # Verrouillage des dépendances

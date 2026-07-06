@@ -171,4 +171,4 @@ Le binaire est dans `target/release/JanusCore.exe`.
 | `src/routes.rs` | Définition des routes Warp |
 | `src/service.rs` | Thread d'auto-play |
 
-Les utilitaires partagés (normalisation EBU R128, config, logger, GUI) sont dans le crate `janus_common`.
+Les utilitaires partagés (normalisation EBU R128, config, logger, GUI) sont dans le crate `janus_nucleus`.

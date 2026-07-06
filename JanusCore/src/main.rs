@@ -10,9 +10,9 @@ use warp;
 use crate::model::PlayerState;
 use crate::routes::create_routes;
 use crate::service::PlayerService;
-use janus_common::config::read_config;
-use janus_common::gui::LogWindowHandle;
-use janus_common::logger::{log_info, set_gui_enabled};
+use janus_nucleus::config::read_config;
+use janus_nucleus::gui::LogWindowHandle;
+use janus_nucleus::logger::{log_info, set_gui_enabled};
 
 use warp::Filter;
 
@@ -21,7 +21,7 @@ use warp::Filter;
 async fn main() {
     // Configuration initiale
     PlayerService::set_console_title();
-    // Lecture de la configuration depios janus_common
+    // Lecture de la configuration depios janus_nucleus
     let config = read_config();
     let initial_volume = config.volume.unwrap_or(1.0);
     let initial_normalization_enabled = config.normalization_enabled.unwrap_or(true);
@@ -47,7 +47,7 @@ async fn main() {
     let (_stream, stream_handle) = match PlayerService::initialize_audio() {
         Ok(s) => s,
         Err(e) => {
-            janus_common::logger::log_error(format!("Impossible d'initialiser l'audio : {}", e));
+            janus_nucleus::logger::log_error(format!("Impossible d'initialiser l'audio : {}", e));
             return;
         }
     };

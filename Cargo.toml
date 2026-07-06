@@ -2,6 +2,6 @@
 members = [
     "JanusCore",
     "PhonosCore",
-    "janus_common"
+    "janus_nucleus"
 ]
 resolver = "2"

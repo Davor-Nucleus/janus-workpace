@@ -1,9 +1,9 @@
 use rodio::Sink;
 use std::sync::{Arc, Mutex, mpsc};
 
-use janus_common::audio::NormalizationManager;
-use janus_common::config::update_config_key;
-use janus_common::logger::{log_error, log_info};
+use janus_nucleus::audio::NormalizationManager;
+use janus_nucleus::config::update_config_key;
+use janus_nucleus::logger::{log_error, log_info};
 
 // Plus de payload pour contrôle de musique
 

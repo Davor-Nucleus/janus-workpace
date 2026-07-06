@@ -2,9 +2,9 @@
 //! Exposes configuration types (`EnvConfig`, `VolumeRequest`) and the player state (`PlayerState`).
 //! Also provides helpers to read/write `env.json` and to discover music folders.
 
-use janus_common::audio::NormalizationManager;
-use janus_common::config::update_config_key;
-use janus_common::logger::{log_error, log_info};
+use janus_nucleus::audio::NormalizationManager;
+use janus_nucleus::config::update_config_key;
+use janus_nucleus::logger::{log_error, log_info};
 use rand::seq::SliceRandom;
 use rodio::{Decoder, Sink};
 use base64::{engine::general_purpose::STANDARD, Engine as _};

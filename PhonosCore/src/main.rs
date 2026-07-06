@@ -9,8 +9,8 @@ use warp;
 use crate::model::PlayerState;
 use crate::routes::create_routes;
 use crate::service::PlayerService;
-use janus_common::config::read_config;
-use janus_common::logger::{log_info, set_global_log_buffer_ptr, set_gui_enabled};
+use janus_nucleus::config::read_config;
+use janus_nucleus::logger::{log_info, set_global_log_buffer_ptr, set_gui_enabled};
 
 use warp::Filter;
 
@@ -19,7 +19,7 @@ async fn main() {
     // Configuration initiale
     PlayerService::set_console_title();
 
-    // Lecture de la configuration depuis janus_common
+    // Lecture de la configuration depuis janus_nucleus
     let config = read_config();
     let initial_volume = config.volume.unwrap_or(1.0);
     let port = config.port_soundboard.unwrap_or(3003);
@@ -41,7 +41,7 @@ async fn main() {
     let (_stream, stream_handle) = match PlayerService::initialize_audio() {
         Ok(s) => s,
         Err(e) => {
-            janus_common::logger::log_error(format!("Impossible d'initialiser l'audio : {}", e));
+            janus_nucleus::logger::log_error(format!("Impossible d'initialiser l'audio : {}", e));
             return;
         }
     };
@@ -72,7 +72,7 @@ async fn main() {
     if gui_enabled_default_true {
         let log_buf =
             precreated_log_buf.expect("log buffer should be precreated when GUI enabled");
-        janus_common::gui::LogWindowHandle::spawn(
+        janus_nucleus::gui::LogWindowHandle::spawn(
             log_buf.clone(),
             shutdown_tx.clone(),
             "PhonosCore - Logs".to_string(),

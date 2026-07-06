@@ -8,7 +8,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "futures",
- "janus_common",
+ "janus_nucleus",
  "rand",
  "reqwest",
  "rodio",
@@ -27,7 +27,7 @@ name = "PhonosCore"
 version = "0.1.0"
 dependencies = [
  "ebur128",
- "janus_common",
+ "janus_nucleus",
  "rand",
  "reqwest",
  "rodio",
@@ -822,7 +822,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
-name = "janus_common"
+name = "janus_nucleus"
 version = "0.1.0"
 dependencies = [
  "ebur128",
