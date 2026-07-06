@@ -39,6 +39,12 @@ pub struct LimiterRequest {
     pub limiter_db: f32,
 }
 
+#[derive(Deserialize)]
+/// JSON request body for updating the normalization state.
+pub struct NormalizationRequest {
+    pub enabled: bool,
+}
+
 /// Represents the current state of the player: queue, current track,
 /// volume and pause state, plus a bounded history to navigate backwards.
 
@@ -54,6 +60,7 @@ pub struct PlayerState {
     pub history: VecDeque<PathBuf>,
     // Gestionnaire de normalisation partagé
     pub normalization_manager: Arc<NormalizationManager>,
+    pub normalization_enabled: bool,
 }
 
 impl fmt::Debug for PlayerState {
@@ -72,16 +79,18 @@ impl fmt::Debug for PlayerState {
                 }),
             )
             .field("history_len", &self.history.len())
+            .field("normalization_enabled", &self.normalization_enabled)
             .finish()
     }
 }
 
 impl PlayerState {
-    /// Create a new player state with an initial volume and limiter.
+    /// Create a new player state with an initial volume, limiter and normalization flag.
     pub fn new(
         stream_handle: rodio::OutputStreamHandle,
         initial_volume: f32,
         initial_limiter_db: f32,
+        initial_normalization_enabled: bool,
     ) -> Self {
         Self {
             queue: VecDeque::new(),
@@ -93,6 +102,7 @@ impl PlayerState {
             current_file: None,
             history: VecDeque::new(),
             normalization_manager: Arc::new(NormalizationManager::default()),
+            normalization_enabled: initial_normalization_enabled,
         }
     }
 
@@ -138,12 +148,13 @@ impl PlayerState {
                         Ok(source) => {
                             match Sink::try_new(&self.stream_handle) {
                                 Ok(sink) => {
-                                    // Calcul du gain de normalisation
-                                    let normalization_gain =
-                                        self.normalization_manager.get_or_compute_gain(&next_file);
+                                    let normalization_gain = if self.normalization_enabled {
+                                        self.normalization_manager.get_or_compute_gain(&next_file)
+                                    } else {
+                                        1.0
+                                    };
 
                                     let final_volume = self.calculate_final_volume();
-                                    // Appliquer le gain combiné (Volume User * Limiter * Normalisation)
                                     sink.set_volume(final_volume * normalization_gain);
 
                                     sink.append(source);
@@ -240,6 +251,17 @@ impl PlayerState {
         if let Err(e) = update_config_key("LIMITER_DB", serde_json::json!(limiter_db)) {
             log_error(format!(
                 "Erreur lors de la mise à jour du limiteur dans env.json: {}",
+                e
+            ));
+        }
+    }
+
+    /// Enable or disable EBUR128 normalization and persist the state to `env.json`.
+    pub fn set_normalization_enabled(&mut self, enabled: bool) {
+        self.normalization_enabled = enabled;
+        if let Err(e) = update_config_key("normalizationEnabled", serde_json::json!(enabled)) {
+            log_error(format!(
+                "Erreur lors de la mise à jour de la normalisation dans env.json: {}",
                 e
             ));
         }
@@ -411,13 +433,14 @@ impl PlayerState {
                     match Decoder::new(BufReader::new(file)) {
                         Ok(source) => match Sink::try_new(&self.stream_handle) {
                             Ok(sink) => {
-                                // Calcul du gain de normalisation
-                                let normalization_gain = self
-                                    .normalization_manager
-                                    .get_or_compute_gain(&previous_file);
+                                let normalization_gain = if self.normalization_enabled {
+                                    self.normalization_manager
+                                        .get_or_compute_gain(&previous_file)
+                                } else {
+                                    1.0
+                                };
 
                                 let final_volume = self.calculate_final_volume();
-                                // Appliquer le gain combiné
                                 sink.set_volume(final_volume * normalization_gain);
 
                                 sink.append(source);

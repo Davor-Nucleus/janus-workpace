@@ -7,7 +7,7 @@ Serveur audio headless en Rust pour la lecture de musique. Conçu pour être con
 - **Formats supportés** : MP3, FLAC, WAV, AAC, MP4 (via Symphonia)
 - **Playlists par dossier** : chargement et lecture aléatoire d'un dossier entier
 - **Navigation** : piste suivante / précédente avec historique
-- **Normalisation EBU R128** : analyse automatique de la loudness à −14.0 LUFS avec cache
+- **Normalisation EBU R128** : analyse automatique de la loudness à −14.0 LUFS avec cache, activable/désactivable à chaud
 - **Limiteur audio** : plafond en dB configurable pour éviter la saturation
 - **Métadonnées** : lecture des tags ID3/Vorbis (titre, artiste, album, date, pochette en base64)
 - **WebSocket** : flux temps réel de l'état du lecteur pour les overlays
@@ -22,7 +22,8 @@ Créez `env.json` à la racine du binaire :
   "PORT_MUSIC": 3001,
   "VOLUME": 0.8,
   "LIMITER_DB": 0.0,
-  "janusCoreGui": true
+  "janusCoreGui": true,
+  "normalizationEnabled": true
 }
 ```
 
@@ -32,6 +33,7 @@ Créez `env.json` à la racine du binaire :
 | `VOLUME` | float (0.0–1.0) | Volume initial |
 | `LIMITER_DB` | float | Plafond en dB (0.0 = pas de limite) |
 | `janusCoreGui` | bool | Ouvre la fenêtre de logs Win32 |
+| `normalizationEnabled` | bool | Active la normalisation EBU R128 au démarrage (défaut : `true`) |
 
 ## Structure des dossiers
 
@@ -82,6 +84,16 @@ Toutes les routes sont en **GET** sauf indication contraire.
 | `GET /api/limiter/subtract` | −1.0 dB |
 
 Une valeur `0.0` dB = aucun plafond. Des valeurs négatives réduisent le volume maximum (ex. `−6.0` dB ≈ 50%).
+
+### Normalisation EBU R128
+
+| Route | Description |
+|-------|-------------|
+| `GET /api/normalization` | `{ "normalization_enabled": bool }` |
+| `POST /api/normalization` | Body : `{ "enabled": false }` — active ou désactive |
+| `GET /api/normalization/toggle` | Bascule l'état courant |
+
+L'état est persisté dans `env.json` (clé `normalizationEnabled`) et relu au prochain démarrage.
 
 ### Informations
 
@@ -141,6 +153,10 @@ Chaque fichier est analysé une fois (gain calculé pour atteindre −14.0 LUFS)
 ```
 volume_final = volume_utilisateur × gain_normalisation × gain_limiteur
 ```
+
+Quand la normalisation est **désactivée**, `gain_normalisation = 1.0` (volume brut du fichier). Le cache reste intact — réactiver la normalisation n'implique pas de ré-analyse.
+
+Le toggle est disponible à chaud via `GET /api/normalization/toggle` ou `POST /api/normalization` sans redémarrage.
 
 ## Fenêtre GUI (Windows)
 

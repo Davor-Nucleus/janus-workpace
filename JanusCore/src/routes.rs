@@ -137,6 +137,25 @@ pub fn create_routes(
         .and(player_filter.clone())
         .and_then(PlayerController::handle_limiter_subtract);
 
+    // Route GET /api/normalization
+    let get_normalization_route = warp::path!("api" / "normalization")
+        .and(warp::get())
+        .and(player_filter.clone())
+        .and_then(PlayerController::handle_get_normalization);
+
+    // Route POST /api/normalization
+    let set_normalization_route = warp::path!("api" / "normalization")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(player_filter.clone())
+        .and_then(PlayerController::handle_set_normalization);
+
+    // Route GET /api/normalization/toggle
+    let normalization_toggle_route = warp::path!("api" / "normalization" / "toggle")
+        .and(warp::get())
+        .and(player_filter.clone())
+        .and_then(PlayerController::handle_normalization_toggle);
+
     // Combine toutes les routes
     folder_route
         .or(stop_route)
@@ -158,4 +177,7 @@ pub fn create_routes(
         .or(set_limiter_route)
         .or(limiter_add_route)
         .or(limiter_subtract_route)
+        .or(get_normalization_route)
+        .or(set_normalization_route)
+        .or(normalization_toggle_route)
 }

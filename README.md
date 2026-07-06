@@ -40,7 +40,8 @@ Chaque projet possède son propre fichier `env.json` dans son répertoire respec
   "PORT_MUSIC": 3001,
   "VOLUME": 1.0,
   "LIMITER_DB": 0.0,
-  "janusCoreGui": true
+  "janusCoreGui": true,
+  "normalizationEnabled": true
 }
 ```
 
@@ -62,6 +63,7 @@ Chaque projet possède son propre fichier `env.json` dans son répertoire respec
 * **phonosCoreGui** : Active/Désactive la fenêtre de logs native pour PhonosCore (défaut: true).
 * **VOLUME** : Volume global initial (0.0 à 1.0).
 * **LIMITER_DB** : Limiteur en décibels pour JanusCore (défaut: 0.0).
+* **normalizationEnabled** : Active la normalisation EBU R128 au démarrage pour JanusCore (défaut: true).
 
 ## Démarrage
 
@@ -131,6 +133,14 @@ cargo run
   * Corps: `{"limiter_db": -3.0}`
 * **Augmenter le limiteur** : `GET /api/limiter/add`
 * **Diminuer le limiteur** : `GET /api/limiter/subtract`
+
+#### Normalisation EBU R128
+* **État de la normalisation** : `GET /api/normalization`
+  * Retourne `{ "normalization_enabled": true/false }`
+* **Activer / désactiver** : `POST /api/normalization`
+  * Corps : `{ "enabled": false }`
+* **Basculer** : `GET /api/normalization/toggle`
+  * Inverse l'état courant, persiste dans `env.json`
 
 #### État et Informations
 * **État actuel** : `GET /api/status`

@@ -23,6 +23,9 @@ pub struct EnvConfig {
 
     #[serde(rename = "phonosCoreGui")]
     pub phonos_core_gui: Option<bool>,
+
+    #[serde(rename = "normalizationEnabled")]
+    pub normalization_enabled: Option<bool>,
 }
 
 impl Default for EnvConfig {
@@ -34,6 +37,7 @@ impl Default for EnvConfig {
             limiter_db: Some(0.0),
             janus_core_gui: Some(true),
             phonos_core_gui: Some(true),
+            normalization_enabled: Some(true),
         }
     }
 }

@@ -13,7 +13,7 @@ use warp::ws::Message;
 use warp::ws::Ws;
 use warp::{Rejection, Reply};
 
-use crate::model::{LimiterRequest, PlayerState, VolumeRequest, get_folders_list};
+use crate::model::{LimiterRequest, NormalizationRequest, PlayerState, VolumeRequest, get_folders_list};
 
 /// Grouping of HTTP API handlers for the player.
 pub struct PlayerController;
@@ -449,6 +449,52 @@ impl PlayerController {
         let response = serde_json::json!({
             "message": "Limiteur mis à jour avec succès",
             "limiter": p.limiter_db
+        });
+        Ok(warp::reply::with_status(
+            warp::reply::json(&response),
+            warp::http::StatusCode::OK,
+        ))
+    }
+
+    /// Return the current normalization state as JSON.
+    pub async fn handle_get_normalization(
+        player: Arc<Mutex<PlayerState>>,
+    ) -> Result<impl Reply, std::convert::Infallible> {
+        let p = player.lock().unwrap();
+        let response = serde_json::json!({ "normalization_enabled": p.normalization_enabled });
+        Ok(warp::reply::with_status(
+            warp::reply::json(&response),
+            warp::http::StatusCode::OK,
+        ))
+    }
+
+    /// Enable or disable normalization using a JSON body `{ enabled: bool }`.
+    pub async fn handle_set_normalization(
+        req: NormalizationRequest,
+        player: Arc<Mutex<PlayerState>>,
+    ) -> Result<impl Reply, std::convert::Infallible> {
+        let mut p = player.lock().unwrap();
+        p.set_normalization_enabled(req.enabled);
+        let response = serde_json::json!({
+            "message": "Normalisation mise à jour avec succès",
+            "normalization_enabled": p.normalization_enabled
+        });
+        Ok(warp::reply::with_status(
+            warp::reply::json(&response),
+            warp::http::StatusCode::OK,
+        ))
+    }
+
+    /// Toggle normalization on/off.
+    pub async fn handle_normalization_toggle(
+        player: Arc<Mutex<PlayerState>>,
+    ) -> Result<impl Reply, std::convert::Infallible> {
+        let mut p = player.lock().unwrap();
+        let new_state = !p.normalization_enabled;
+        p.set_normalization_enabled(new_state);
+        let response = serde_json::json!({
+            "message": "Normalisation basculée",
+            "normalization_enabled": p.normalization_enabled
         });
         Ok(warp::reply::with_status(
             warp::reply::json(&response),

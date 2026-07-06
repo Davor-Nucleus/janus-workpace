@@ -25,6 +25,7 @@ async fn main() {
     let config = read_config();
     let initial_volume = config.volume.unwrap_or(1.0);
     let initial_limiter_db = config.limiter_db.unwrap_or(0.0);
+    let initial_normalization_enabled = config.normalization_enabled.unwrap_or(true);
     let port = config.port_music.unwrap_or(3030);
     let gui_enabled = config.janus_core_gui.unwrap_or(true);
     set_gui_enabled(gui_enabled);
@@ -55,6 +56,7 @@ async fn main() {
         stream_handle,
         initial_volume,
         initial_limiter_db,
+        initial_normalization_enabled,
     )));
 
     // Démarrage du service de lecture automatique
