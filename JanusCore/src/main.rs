@@ -7,9 +7,10 @@ mod service;
 use std::sync::{Arc, Mutex};
 use warp;
 
-use crate::model::{PlayerState, read_env_config};
+use crate::model::PlayerState;
 use crate::routes::create_routes;
 use crate::service::PlayerService;
+use janus_common::config::read_config;
 use janus_common::gui::LogWindowHandle;
 use janus_common::logger::{log_info, set_gui_enabled};
 
@@ -20,16 +21,12 @@ use warp::Filter;
 async fn main() {
     // Configuration initiale
     PlayerService::set_console_title();
-    // Lecture de la configuration depuis env.json
-    let (initial_volume, initial_limiter_db, port, gui_enabled) = match read_env_config() {
-        Ok(cfg) => (
-            cfg.volume.unwrap_or(1.0),
-            cfg.limiter_db.unwrap_or(0.0),
-            cfg.port_music.unwrap_or(3030),
-            cfg.janus_core_gui.unwrap_or(true),
-        ),
-        Err(_) => (1.0, 0.0, 3030, true),
-    };
+    // Lecture de la configuration depios janus_common
+    let config = read_config();
+    let initial_volume = config.volume.unwrap_or(1.0);
+    let initial_limiter_db = config.limiter_db.unwrap_or(0.0);
+    let port = config.port_music.unwrap_or(3030);
+    let gui_enabled = config.janus_core_gui.unwrap_or(true);
     set_gui_enabled(gui_enabled);
 
     // Démarrer une petite fenêtre de logs et écouter sa fermeture si activée
@@ -42,7 +39,13 @@ async fn main() {
     // initial_volume et port déjà lus ci-dessus
 
     // Initialisation audio
-    let (_stream, stream_handle) = PlayerService::initialize_audio();
+    let (_stream, stream_handle) = match PlayerService::initialize_audio() {
+        Ok(s) => s,
+        Err(e) => {
+            janus_common::logger::log_error(format!("Impossible d'initialiser l'audio : {}", e));
+            return;
+        }
+    };
     let player = Arc::new(Mutex::new(PlayerState::new(
         stream_handle,
         initial_volume,

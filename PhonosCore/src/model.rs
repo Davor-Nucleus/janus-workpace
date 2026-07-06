@@ -1,20 +1,8 @@
 use rodio::Sink;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::fs;
 use std::sync::{Arc, Mutex, mpsc};
 
+use janus_common::config::update_config_key;
 use janus_common::logger::{log_error, log_info};
-
-#[derive(Deserialize, Serialize)]
-pub struct EnvConfig {
-    #[serde(rename = "PORT_SOUNDBOARD")]
-    pub port_soundboard: Option<u16>,
-    #[serde(rename = "VOLUME")]
-    pub volume: Option<f32>,
-    #[serde(rename = "phonosCoreGui")]
-    pub janus_core_gui: Option<bool>,
-}
 
 // Plus de payload pour contrôle de musique
 
@@ -49,7 +37,7 @@ impl PlayerState {
             }
         }
         // Mettre à jour uniquement la clé VOLUME dans env.json
-        if let Err(e) = update_env_key("VOLUME", serde_json::json!(volume)) {
+        if let Err(e) = update_config_key("VOLUME", serde_json::json!(volume)) {
             log_error(format!(
                 "Erreur lors de la mise à jour du volume dans env.json: {}",
                 e
@@ -117,20 +105,6 @@ impl PlayerState {
             sinks.retain(|sink| !Arc::ptr_eq(sink, sink_to_remove));
         }
     }
-}
-
-pub fn read_env_config() -> Result<EnvConfig, Box<dyn std::error::Error>> {
-    let data = fs::read_to_string("env.json")?;
-    let config: EnvConfig = serde_json::from_str(&data)?;
-    Ok(config)
-}
-
-#[allow(dead_code)]
-pub fn update_env_key(key: &str, value: Value) -> Result<(), Box<dyn std::error::Error>> {
-    let mut data: Value = serde_json::from_str(&fs::read_to_string("env.json")?)?;
-    data[key] = value;
-    fs::write("env.json", serde_json::to_string_pretty(&data)?)?;
-    Ok(())
 }
 
 // Plus de découverte de dossiers de musique

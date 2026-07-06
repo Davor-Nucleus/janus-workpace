@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 winapi = { version = "0.3", features = ["wincon", "winuser", "libloaderapi", "commctrl", "wingdi"] }
 widestring = "1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

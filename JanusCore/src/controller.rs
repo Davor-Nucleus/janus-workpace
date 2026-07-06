@@ -1,21 +1,19 @@
 //! HTTP controllers (Warp handlers) orchestrating actions on the player state.
 
+use futures::{SinkExt, StreamExt};
+use serde_json;
 use std::{
     collections::HashMap,
     path::Path,
     sync::{Arc, Mutex},
     time::Duration,
 };
-use warp::{Rejection, Reply};
-use serde_json;
-use warp::ws::Ws;
-use warp::ws::Message;
-use futures::{SinkExt, StreamExt};
 use tokio::time::sleep;
+use warp::ws::Message;
+use warp::ws::Ws;
+use warp::{Rejection, Reply};
 
- 
-
-use crate::model::{PlayerState, VolumeRequest, LimiterRequest, get_folders_list};
+use crate::model::{LimiterRequest, PlayerState, VolumeRequest, get_folders_list};
 
 /// Grouping of HTTP API handlers for the player.
 pub struct PlayerController;
@@ -66,21 +64,28 @@ impl PlayerController {
         ))
     }
 
-    /// Toggle pause/resume the playback.
+    /// Force pause the playback.
     pub async fn handle_pause(
         player: Arc<Mutex<PlayerState>>,
     ) -> Result<impl Reply, std::convert::Infallible> {
         let mut p = player.lock().unwrap();
-        p.toggle_pause();
-        
-        let message = if p.paused {
-            "Lecture mise en pause"
-        } else {
-            "Lecture reprise"
-        };
+        p.pause();
 
         Ok(warp::reply::with_status(
-            message,
+            "Lecture mise en pause",
+            warp::http::StatusCode::OK,
+        ))
+    }
+
+    /// Force resume the playback.
+    pub async fn handle_resume(
+        player: Arc<Mutex<PlayerState>>,
+    ) -> Result<impl Reply, std::convert::Infallible> {
+        let mut p = player.lock().unwrap();
+        p.resume();
+
+        Ok(warp::reply::with_status(
+            "Lecture reprise",
             warp::http::StatusCode::OK,
         ))
     }
@@ -180,6 +185,22 @@ impl PlayerController {
         ))
     }
 
+    /// Return the current player status (paused, current music).
+    pub async fn handle_status(
+        player: Arc<Mutex<PlayerState>>,
+    ) -> Result<impl Reply, std::convert::Infallible> {
+        let p = player.lock().unwrap();
+        let response = serde_json::json!({
+            "paused": p.paused,
+            "current_music": p.get_current_music_name(),
+            "volume": p.volume
+        });
+        Ok(warp::reply::with_status(
+            warp::reply::json(&response),
+            warp::http::StatusCode::OK,
+        ))
+    }
+
     /// Return the name of the currently playing track, or a message if none.
     pub async fn handle_current_music(
         player: Arc<Mutex<PlayerState>>,
@@ -200,9 +221,11 @@ impl PlayerController {
         }
     }
 
-
     /// WebSocket handler to stream current music state updates.
-    pub async fn handle_current_music_ws(ws: Ws, player: Arc<Mutex<PlayerState>>) -> Result<impl Reply, Rejection> {
+    pub async fn handle_current_music_ws(
+        ws: Ws,
+        player: Arc<Mutex<PlayerState>>,
+    ) -> Result<impl Reply, Rejection> {
         Ok(ws.on_upgrade(move |socket| async move {
             let (mut tx, mut rx) = socket.split();
 
@@ -229,7 +252,8 @@ impl PlayerController {
                         "current_music": current_music,
                         "has_next": has_next,
                         "history_len": guard.history.len(),
-                    }).to_string()
+                    })
+                    .to_string()
                 };
 
                 if last.as_ref().map(|s| s != &snapshot).unwrap_or(true) {
@@ -243,24 +267,24 @@ impl PlayerController {
         }))
     }
 
-    
-
     // Méthode pour jouer la piste précédente
     /// Play the previous track if available.
     pub async fn handle_previous(
         player: Arc<Mutex<PlayerState>>,
     ) -> Result<impl Reply, std::convert::Infallible> {
         let mut p = player.lock().unwrap();
-        
+
         if p.has_previous() {
             p.play_previous();
-            let music_name = p.get_current_music_name().unwrap_or_else(|| "Inconnu".to_string());
-            
+            let music_name = p
+                .get_current_music_name()
+                .unwrap_or_else(|| "Inconnu".to_string());
+
             let response = serde_json::json!({
                 "message": "Piste précédente jouée",
                 "current_music": music_name
             });
-            
+
             Ok(warp::reply::with_status(
                 warp::reply::json(&response),
                 warp::http::StatusCode::OK,
@@ -270,7 +294,7 @@ impl PlayerController {
                 "message": "Aucune piste précédente disponible",
                 "error": "no_previous_track"
             });
-            
+
             Ok(warp::reply::with_status(
                 warp::reply::json(&response),
                 warp::http::StatusCode::BAD_REQUEST,
@@ -284,12 +308,12 @@ impl PlayerController {
         player: Arc<Mutex<PlayerState>>,
     ) -> Result<impl Reply, std::convert::Infallible> {
         let p = player.lock().unwrap();
-        
+
         let response = serde_json::json!({
             "has_previous": p.has_previous(),
             "previous_music": p.get_previous_music_name()
         });
-        
+
         Ok(warp::reply::with_status(
             warp::reply::json(&response),
             warp::http::StatusCode::OK,
@@ -302,17 +326,19 @@ impl PlayerController {
         player: Arc<Mutex<PlayerState>>,
     ) -> Result<impl Reply, std::convert::Infallible> {
         let mut p = player.lock().unwrap();
-        
+
         // Vérifier s'il y a une piste suivante dans la queue
         if !p.queue.is_empty() {
             p.play_next();
-            let music_name = p.get_current_music_name().unwrap_or_else(|| "Inconnu".to_string());
-            
+            let music_name = p
+                .get_current_music_name()
+                .unwrap_or_else(|| "Inconnu".to_string());
+
             let response = serde_json::json!({
                 "message": "Piste suivante jouée",
                 "current_music": music_name
             });
-            
+
             Ok(warp::reply::with_status(
                 warp::reply::json(&response),
                 warp::http::StatusCode::OK,
@@ -321,13 +347,15 @@ impl PlayerController {
             // Si la queue est vide, on peut quand même essayer de jouer la suivante
             // (cela peut reconstituer la playlist)
             p.play_next();
-            let music_name = p.get_current_music_name().unwrap_or_else(|| "Inconnu".to_string());
-            
+            let music_name = p
+                .get_current_music_name()
+                .unwrap_or_else(|| "Inconnu".to_string());
+
             let response = serde_json::json!({
                 "message": "Piste suivante jouée (playlist reconstituée)",
                 "current_music": music_name
             });
-            
+
             Ok(warp::reply::with_status(
                 warp::reply::json(&response),
                 warp::http::StatusCode::OK,
@@ -341,15 +369,15 @@ impl PlayerController {
         player: Arc<Mutex<PlayerState>>,
     ) -> Result<impl Reply, std::convert::Infallible> {
         let p = player.lock().unwrap();
-        
+
         let has_next = !p.queue.is_empty() || p.current_file.is_some();
-        
+
         let response = serde_json::json!({
             "has_next": has_next,
             "queue_length": p.queue.len(),
             "current_music": p.get_current_music_name()
         });
-        
+
         Ok(warp::reply::with_status(
             warp::reply::json(&response),
             warp::http::StatusCode::OK,
@@ -418,4 +446,4 @@ impl PlayerController {
             warp::http::StatusCode::OK,
         ))
     }
-} 
+}

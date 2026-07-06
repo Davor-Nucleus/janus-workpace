@@ -21,8 +21,27 @@ impl PlayerController {
         player: Arc<Mutex<PlayerState>>,
         music_port: u16,
     ) -> Result<impl Reply, std::convert::Infallible> {
-        // Met en pause la musique sur l'autre programme (async)
-        let _ = reqwest::get(format!("http://127.0.0.1:{}/api/pause", music_port)).await;
+        // 1. Vérifier l'état de la musique (paused ou playing ?)
+        let status_url = format!("http://127.0.0.1:{}/api/status", music_port);
+        let was_playing = match reqwest::get(&status_url).await {
+            Ok(resp) => {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    // Si paused == false, alors c'était en lecture
+                    json.get("paused")
+                        .and_then(|v| v.as_bool())
+                        .map(|p| !p)
+                        .unwrap_or(false)
+                } else {
+                    false
+                }
+            }
+            Err(_) => false, // Si on ne peut pas joindre JanusCore, on assume qu'il ne joue pas
+        };
+
+        // 2. Si c'était en lecture, on force la pause
+        if was_playing {
+            let _ = reqwest::get(format!("http://127.0.0.1:{}/api/pause", music_port)).await;
+        }
 
         if let Some(sound_name) = params.get("sound") {
             let base = Path::new("./public/soundboard");
@@ -136,10 +155,10 @@ impl PlayerController {
                         p.remove_soundboard_sink(&sink_arc_clone);
                     }
 
-                    // Relance la musique seulement si le son n'a pas été arrêté manuellement
-                    if !should_stop {
+                    // 4. Relance la musique seulement SI elle était en lecture AVANT
+                    if !should_stop && was_playing {
                         let _ = reqwest::blocking::get(format!(
-                            "http://127.0.0.1:{}/api/pause",
+                            "http://127.0.0.1:{}/api/resume",
                             music_port
                         ));
                     }
@@ -228,8 +247,8 @@ impl PlayerController {
             log_error("Impossible de verrouiller le player");
         }
 
-        // Reprend la musique (toggle pause) sur l'autre programme
-        let _ = reqwest::get(format!("http://127.0.0.1:{}/api/pause", music_port)).await;
+        // Reprend la musique (force resume) sur l'autre programme
+        let _ = reqwest::get(format!("http://127.0.0.1:{}/api/resume", music_port)).await;
 
         let response = serde_json::json!({
             "message": "Soundboard arrêtée avec succès"

@@ -1,8 +1,8 @@
 //! Background services: audio initialization and auto-play loop.
 
+use rodio::OutputStream;
 use std::sync::{Arc, Mutex};
 use tokio;
-use rodio::OutputStream;
 
 use crate::model::PlayerState;
 
@@ -20,7 +20,7 @@ impl PlayerService {
     /// Start a background async task that watches track completion and auto-advances.
     pub fn start_auto_play_thread(&self) {
         let player_clone = self.player.clone();
-        
+
         tokio::spawn(async move {
             loop {
                 {
@@ -41,8 +41,9 @@ impl PlayerService {
     }
 
     /// Initialize the default audio output and return both the stream and its handle.
-    pub fn initialize_audio() -> (OutputStream, rodio::OutputStreamHandle) {
-        OutputStream::try_default().unwrap()
+    pub fn initialize_audio()
+    -> Result<(OutputStream, rodio::OutputStreamHandle), rodio::StreamError> {
+        OutputStream::try_default()
     }
 
     /// Set the console title on Windows.
@@ -60,4 +61,4 @@ impl PlayerService {
             }
         }
     }
-} 
+}

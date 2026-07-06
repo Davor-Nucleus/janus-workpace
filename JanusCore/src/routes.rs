@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use warp::{Filter, Rejection, Reply};
 
-use crate::model::PlayerState;
 use crate::controller::PlayerController;
+use crate::model::PlayerState;
 
 /// Build and return the full set of Warp routes to be served.
 pub fn create_routes(
@@ -31,6 +31,12 @@ pub fn create_routes(
         .and(warp::get())
         .and(player_filter.clone())
         .and_then(PlayerController::handle_pause);
+
+    // Route GET /api/resume
+    let resume_route = warp::path!("api" / "resume")
+        .and(warp::get())
+        .and(player_filter.clone())
+        .and_then(PlayerController::handle_resume);
 
     // Route GET /api/folderlist
     let folderlist_route = warp::path!("api" / "folderlist")
@@ -68,6 +74,11 @@ pub fn create_routes(
         .and(player_filter.clone())
         .and_then(PlayerController::handle_current_music);
 
+    // Route GET /api/status
+    let status_route = warp::path!("api" / "status")
+        .and(warp::get())
+        .and(player_filter.clone())
+        .and_then(PlayerController::handle_status);
 
     // Route ws /api/current_music
     let current_music_ws_route = warp::path!("api" / "current_music_ws")
@@ -130,12 +141,14 @@ pub fn create_routes(
     folder_route
         .or(stop_route)
         .or(pause_route)
+        .or(resume_route)
         .or(folderlist_route)
         .or(get_volume_route)
         .or(set_volume_route)
         .or(volume_add_route)
         .or(volume_subtract_route)
         .or(current_music_route)
+        .or(status_route)
         .or(current_music_ws_route)
         .or(previous_route)
         .or(has_previous_route)
@@ -145,4 +158,4 @@ pub fn create_routes(
         .or(set_limiter_route)
         .or(limiter_add_route)
         .or(limiter_subtract_route)
-} 
+}

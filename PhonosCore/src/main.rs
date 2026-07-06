@@ -6,9 +6,10 @@ mod service;
 use std::sync::{Arc, Mutex, mpsc};
 use warp;
 
-use crate::model::{PlayerState, read_env_config};
+use crate::model::PlayerState;
 use crate::routes::create_routes;
 use crate::service::PlayerService;
+use janus_common::config::read_config;
 use janus_common::logger::{log_info, set_global_log_buffer_ptr, set_gui_enabled};
 
 use warp::Filter;
@@ -18,15 +19,11 @@ async fn main() {
     // Configuration initiale
     PlayerService::set_console_title();
 
-    // Lecture de la configuration depuis env.json
-    let (initial_volume, port, gui_enabled_default_true) = match read_env_config() {
-        Ok(cfg) => (
-            cfg.volume.unwrap_or(1.0),
-            cfg.port_soundboard.unwrap_or(3003),
-            cfg.janus_core_gui.unwrap_or(true),
-        ),
-        Err(_) => (1.0, 3003, true),
-    };
+    // Lecture de la configuration depuis janus_common
+    let config = read_config();
+    let initial_volume = config.volume.unwrap_or(1.0);
+    let port = config.port_soundboard.unwrap_or(3003);
+    let gui_enabled_default_true = config.phonos_core_gui.unwrap_or(true);
     set_gui_enabled(gui_enabled_default_true);
 
     // Préparer le buffer de logs global AVANT toute écriture de logs
@@ -41,7 +38,13 @@ async fn main() {
     }
 
     // Initialisation audio
-    let (_stream, stream_handle) = PlayerService::initialize_audio();
+    let (_stream, stream_handle) = match PlayerService::initialize_audio() {
+        Ok(s) => s,
+        Err(e) => {
+            janus_common::logger::log_error(format!("Impossible d'initialiser l'audio : {}", e));
+            return;
+        }
+    };
     let player = Arc::new(Mutex::new(PlayerState::new(stream_handle, initial_volume)));
 
     // Détecte le port du programme musique via variable d'environnement (fallback 3001)

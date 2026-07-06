@@ -2,12 +2,11 @@
 //! Exposes configuration types (`EnvConfig`, `VolumeRequest`) and the player state (`PlayerState`).
 //! Also provides helpers to read/write `env.json` and to discover music folders.
 
+use janus_common::config::update_config_key;
 use janus_common::logger::{log_error, log_info};
 use rand::seq::SliceRandom;
 use rodio::{Decoder, Sink};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::fs;
+use serde::Deserialize;
 use std::{
     collections::VecDeque,
     fmt,
@@ -15,19 +14,6 @@ use std::{
     io::BufReader,
     path::{Path, PathBuf},
 };
-
-#[derive(Deserialize, Serialize)]
-/// Configuration read from `env.json`.
-pub struct EnvConfig {
-    #[serde(rename = "PORT_MUSIC")]
-    pub port_music: Option<u16>,
-    #[serde(rename = "VOLUME")]
-    pub volume: Option<f32>,
-    #[serde(rename = "LIMITER_DB")]
-    pub limiter_db: Option<f32>,
-    #[serde(rename = "janusCoreGui")]
-    pub janus_core_gui: Option<bool>,
-}
 
 #[derive(Deserialize)]
 /// JSON request body for updating the player volume.
@@ -124,16 +110,48 @@ impl PlayerState {
         }
 
         if let Some(next_file) = self.queue.pop_front() {
-            log_info(format!("Lecture : {:?}", next_file.file_name().unwrap()));
+            let file_name = next_file
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Inconnu".to_string());
 
-            let file = File::open(&next_file).unwrap();
-            let source = Decoder::new(BufReader::new(file)).unwrap();
-            let sink = Sink::try_new(&self.stream_handle).unwrap();
-            let final_volume = self.calculate_final_volume();
-            sink.set_volume(final_volume);
-            sink.append(source);
-            self.sink = Some(sink);
-            self.current_file = Some(next_file);
+            log_info(format!("Lecture : {}", file_name));
+
+            match File::open(&next_file) {
+                Ok(file) => {
+                    match Decoder::new(BufReader::new(file)) {
+                        Ok(source) => {
+                            match Sink::try_new(&self.stream_handle) {
+                                Ok(sink) => {
+                                    let final_volume = self.calculate_final_volume();
+                                    sink.set_volume(final_volume);
+                                    sink.append(source);
+                                    self.sink = Some(sink);
+                                    self.current_file = Some(next_file);
+                                }
+                                Err(e) => {
+                                    log_error(format!("Erreur création Sink audio : {}", e));
+                                    // On essaie de passer à la suivante si erreur technique ?
+                                    // Pour l'instant on s'arrête pour éviter une boucle rapide infinie
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log_error(format!("Erreur décodage fichier {:?} : {}", next_file, e));
+                            // Fichier corrompu, on passe au suivant
+                            self.play_next();
+                        }
+                    }
+                }
+                Err(e) => {
+                    log_error(format!(
+                        "Impossible d'ouvrir le fichier {:?} : {}",
+                        next_file, e
+                    ));
+                    // Fichier introuvable, on passe au suivant
+                    self.play_next();
+                }
+            }
         } else {
             // Si la playlist est vide, on la reconstitue avec les mêmes fichiers
             if let Some(current_file) = &self.current_file {
@@ -182,9 +200,10 @@ impl PlayerState {
             sink.set_volume(final_volume);
         }
         // Mettre à jour uniquement la clé VOLUME dans env.json
-        if let Err(e) = update_env_key("VOLUME", serde_json::json!(volume)) {
+        if let Err(e) = update_config_key("VOLUME", serde_json::json!(volume)) {
             log_error(format!(
-                "Erreur lors de la mise à jour du volume dans env.json: {e}"
+                "Erreur lors de la mise à jour du volume dans env.json: {}",
+                e
             ));
         }
     }
@@ -197,9 +216,10 @@ impl PlayerState {
             sink.set_volume(final_volume);
         }
         // Mettre à jour uniquement la clé LIMITER_DB dans env.json
-        if let Err(e) = update_env_key("LIMITER_DB", serde_json::json!(limiter_db)) {
+        if let Err(e) = update_config_key("LIMITER_DB", serde_json::json!(limiter_db)) {
             log_error(format!(
-                "Erreur lors de la mise à jour du limiteur dans env.json: {e}"
+                "Erreur lors de la mise à jour du limiteur dans env.json: {}",
+                e
             ));
         }
     }
@@ -254,15 +274,6 @@ impl PlayerState {
             .map(|s| s.to_string())
     }
 
-    /// Toggle pause: pause if currently playing, resume if currently paused.
-    pub fn toggle_pause(&mut self) {
-        if self.paused {
-            self.resume();
-        } else {
-            self.pause();
-        }
-    }
-
     // Méthode pour jouer la piste précédente
     /// Play the previous track using the history and push the current one
     /// back to the front of the queue.
@@ -278,19 +289,44 @@ impl PlayerState {
 
         // Récupérer la piste précédente depuis l'historique
         if let Some(previous_file) = self.history.pop_back() {
-            log_info(format!(
-                "Lecture précédente : {:?}",
-                previous_file.file_name().unwrap()
-            ));
+            let file_name = previous_file
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Inconnu".to_string());
 
-            let file = File::open(&previous_file).unwrap();
-            let source = Decoder::new(BufReader::new(file)).unwrap();
-            let sink = Sink::try_new(&self.stream_handle).unwrap();
-            let final_volume = self.calculate_final_volume();
-            sink.set_volume(final_volume);
-            sink.append(source);
-            self.sink = Some(sink);
-            self.current_file = Some(previous_file);
+            log_info(format!("Lecture précédente : {}", file_name));
+
+            match File::open(&previous_file) {
+                Ok(file) => {
+                    match Decoder::new(BufReader::new(file)) {
+                        Ok(source) => match Sink::try_new(&self.stream_handle) {
+                            Ok(sink) => {
+                                let final_volume = self.calculate_final_volume();
+                                sink.set_volume(final_volume);
+                                sink.append(source);
+                                self.sink = Some(sink);
+                                self.current_file = Some(previous_file);
+                            }
+                            Err(e) => {
+                                log_error(format!("Erreur création Sink audio (prev) : {}", e));
+                            }
+                        },
+                        Err(e) => {
+                            log_error(format!(
+                                "Erreur décodage fichier {:?} : {}",
+                                previous_file, e
+                            ));
+                            // Si erreur, on tente encore la précédente ? Pour l'instant on stop.
+                        }
+                    }
+                }
+                Err(e) => {
+                    log_error(format!(
+                        "Impossible d'ouvrir le fichier {:?} : {}",
+                        previous_file, e
+                    ));
+                }
+            }
         } else {
             log_info("Aucune piste précédente disponible");
         }
@@ -311,21 +347,6 @@ impl PlayerState {
             .and_then(|name| name.to_str())
             .map(|s| s.to_string())
     }
-}
-
-/// Read and deserialize `env.json` into an `EnvConfig`.
-pub fn read_env_config() -> Result<EnvConfig, Box<dyn std::error::Error>> {
-    let data = fs::read_to_string("env.json")?;
-    let config: EnvConfig = serde_json::from_str(&data)?;
-    Ok(config)
-}
-
-/// Update an arbitrary key in `env.json` with a given JSON value.
-pub fn update_env_key(key: &str, value: Value) -> Result<(), Box<dyn std::error::Error>> {
-    let mut data: Value = serde_json::from_str(&fs::read_to_string("env.json")?)?;
-    data[key] = value;
-    fs::write("env.json", serde_json::to_string_pretty(&data)?)?;
-    Ok(())
 }
 
 /// Return the list of folders directly under `./public/music`.

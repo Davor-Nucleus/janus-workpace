@@ -3,8 +3,9 @@ use rodio::OutputStream;
 pub struct PlayerService;
 
 impl PlayerService {
-    pub fn initialize_audio() -> (OutputStream, rodio::OutputStreamHandle) {
-        OutputStream::try_default().unwrap()
+    pub fn initialize_audio()
+    -> Result<(OutputStream, rodio::OutputStreamHandle), rodio::StreamError> {
+        OutputStream::try_default()
     }
 
     pub fn set_console_title() {
@@ -21,4 +22,4 @@ impl PlayerService {
             }
         }
     }
-} 
+}
