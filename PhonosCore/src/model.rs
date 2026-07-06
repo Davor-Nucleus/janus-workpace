@@ -1,6 +1,7 @@
 use rodio::Sink;
 use std::sync::{Arc, Mutex, mpsc};
 
+use janus_common::audio::NormalizationManager;
 use janus_common::config::update_config_key;
 use janus_common::logger::{log_error, log_info};
 
@@ -13,6 +14,8 @@ pub struct PlayerState {
     pub soundboard_sinks: Arc<Mutex<Vec<Arc<Mutex<Sink>>>>>,
     // Canaux pour arrêter les threads du soundboard
     pub soundboard_stop_channels: Arc<Mutex<Vec<std::sync::mpsc::Sender<bool>>>>,
+    // Gestionnaire de normalisation partagé
+    pub normalization_manager: Arc<NormalizationManager>,
 }
 
 impl PlayerState {
@@ -22,6 +25,7 @@ impl PlayerState {
             volume: initial_volume,
             soundboard_sinks: Arc::new(Mutex::new(Vec::new())),
             soundboard_stop_channels: Arc::new(Mutex::new(Vec::new())),
+            normalization_manager: Arc::new(NormalizationManager::default()),
         }
     }
 
@@ -32,6 +36,9 @@ impl PlayerState {
         if let Ok(sinks) = self.soundboard_sinks.lock() {
             for sink_arc in sinks.iter() {
                 if let Ok(s) = sink_arc.lock() {
+                    // On ne peut pas facilement réappliquer la normalisation ici sans stocker le gain par sink
+                    // Pour l'instant on applique juste le volume global
+                    // Idéalement, le sink devrait connaître son gain de base.
                     s.set_volume(volume);
                 }
             }

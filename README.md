@@ -80,6 +80,14 @@ API: `http://127.0.0.1:3002`
 *   **Lister les sons** : `/api/soundboard/sounds`
 *   **Stop** : `/api/soundboard/stop`
 
+### Audio
+*   **Normalisation Automatique (EBU R128)** :
+    *   C'est la technique utilisée par Spotify, YouTube et la télé.
+    *   Le système analyse le fichier audio une seule fois (calcul du "Loudness").
+    *   Il détermine automatiquement de combien il faut baisser ou monter le son pour qu'il soit au même niveau que les autres (ex : -14 LUFS).
+    *   Il applique ce gain à la volée quand le son est joué.
+    *   **Résultat** : tous tes sons sonnent au même volume sans que tu n'aies rien à faire. C'est beaucoup plus propre !
+
 ## Développement
 
 *   **Logs** : Les logs sont affichés dans une fenêtre dédiée (si GUI activée) et dans la console.

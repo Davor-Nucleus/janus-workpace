@@ -2,17 +2,14 @@
 //! Exposes configuration types (`EnvConfig`, `VolumeRequest`) and the player state (`PlayerState`).
 //! Also provides helpers to read/write `env.json` and to discover music folders.
 
+use janus_common::audio::NormalizationManager;
 use janus_common::config::update_config_key;
 use janus_common::logger::{log_error, log_info};
 use rand::seq::SliceRandom;
 use rodio::{Decoder, Sink};
 use serde::Deserialize;
 use std::{
-    collections::VecDeque,
-    fmt,
-    fs::File,
-    io::BufReader,
-    path::{Path, PathBuf},
+    collections::VecDeque, fmt, fs::File, io::BufReader, path::Path, path::PathBuf, sync::Arc,
 };
 
 #[derive(Deserialize)]
@@ -40,6 +37,8 @@ pub struct PlayerState {
     pub current_file: Option<PathBuf>,
     // Historique des pistes jouées pour la navigation précédente
     pub history: VecDeque<PathBuf>,
+    // Gestionnaire de normalisation partagé
+    pub normalization_manager: Arc<NormalizationManager>,
 }
 
 impl fmt::Debug for PlayerState {
@@ -78,6 +77,7 @@ impl PlayerState {
             limiter_db: initial_limiter_db,
             current_file: None,
             history: VecDeque::new(),
+            normalization_manager: Arc::new(NormalizationManager::default()),
         }
     }
 
@@ -123,8 +123,14 @@ impl PlayerState {
                         Ok(source) => {
                             match Sink::try_new(&self.stream_handle) {
                                 Ok(sink) => {
+                                    // Calcul du gain de normalisation
+                                    let normalization_gain =
+                                        self.normalization_manager.get_or_compute_gain(&next_file);
+
                                     let final_volume = self.calculate_final_volume();
-                                    sink.set_volume(final_volume);
+                                    // Appliquer le gain combiné (Volume User * Limiter * Normalisation)
+                                    sink.set_volume(final_volume * normalization_gain);
+
                                     sink.append(source);
                                     self.sink = Some(sink);
                                     self.current_file = Some(next_file);
@@ -301,8 +307,15 @@ impl PlayerState {
                     match Decoder::new(BufReader::new(file)) {
                         Ok(source) => match Sink::try_new(&self.stream_handle) {
                             Ok(sink) => {
+                                // Calcul du gain de normalisation
+                                let normalization_gain = self
+                                    .normalization_manager
+                                    .get_or_compute_gain(&previous_file);
+
                                 let final_volume = self.calculate_final_volume();
-                                sink.set_volume(final_volume);
+                                // Appliquer le gain combiné
+                                sink.set_volume(final_volume * normalization_gain);
+
                                 sink.append(source);
                                 self.sink = Some(sink);
                                 self.current_file = Some(previous_file);

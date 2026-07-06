@@ -72,6 +72,15 @@ impl PlayerController {
                 let player = player.clone();
                 let music_port = music_port;
                 move || {
+                    // Calculer le gain de normalisation (peut prendre un peu de temps au premier scan)
+                    let normalization_gain = {
+                        if let Ok(p) = player.lock() {
+                            p.normalization_manager.get_or_compute_gain(&file_path)
+                        } else {
+                            1.0
+                        }
+                    };
+
                     // Récupérer le stream_handle du player principal
                     let stream_handle = {
                         if let Ok(p) = player.lock() {
@@ -100,7 +109,9 @@ impl PlayerController {
                     } else {
                         1.0
                     };
-                    sink.set_volume(current_volume);
+
+                    // Appliquer le gain de normalisation
+                    sink.set_volume(current_volume * normalization_gain);
 
                     // Créer un Arc<Mutex<Sink>> pour pouvoir le partager
                     let sink_arc = Arc::new(Mutex::new(sink));
