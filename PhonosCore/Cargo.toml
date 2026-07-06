@@ -1,0 +1,20 @@
+[package]
+name = "PhonosCore"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+winapi = { version = "0.3", features = ["wincon", "winuser", "libloaderapi", "commctrl", "wingdi"] }
+rodio = "0.17"
+walkdir = "2.4"
+rand = "0.8"
+warp = "0.3"
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+reqwest = { version = "0.11", features = ["blocking"] }
+widestring = "1"
+janus_common = { path = "../janus_common" }
+
+[build-dependencies]
+winres = "0.1"

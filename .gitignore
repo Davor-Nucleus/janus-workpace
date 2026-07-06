@@ -1,0 +1,23 @@
+# Rust targets
+/target
+**/target
+
+# IDEs
+.vscode
+.idea
+*.iml
+
+# OS generated
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs
+*.log
+
+# Binaries usually in root during dev (if any)
+*.exe
+*.pdb
+
+# Configs (Updated locally)
+env.json

@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "JanusCore",
+    "PhonosCore",
+    "janus_common"
+]
+resolver = "2"

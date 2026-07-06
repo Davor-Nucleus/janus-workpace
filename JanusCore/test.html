@@ -1,0 +1,9 @@
+<!doctype html>
+<html>
+<body>
+<script>
+  const ws = new WebSocket('ws://localhost:3001/api/current_music');
+  ws.onmessage = e => document.body.appendChild(document.createTextNode(e.data + '\n'));
+</script>
+</body>
+</html>
