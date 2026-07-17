@@ -2,12 +2,11 @@
   <!-- TODO: Insérer le logo du projet ici si vous en avez un -->
   <!-- <img src="public/logo.png" alt="Janus Core Logo" width="200"/> -->
 
-  # 🎵 Janus Core Workspace
+  # Janus Core Workspace
 
   **L'infrastructure audio pour le système de contrôle de stream, avec gestion de la musique et du soundboard.**
 
   [![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)](#)
-  [![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](#)
 </div>
 
 ---
