@@ -13,6 +13,8 @@ use warp::ws::Message;
 use warp::ws::Ws;
 use warp::{Rejection, Reply};
 
+use janus_nucleus::paths::resolve_within;
+
 use crate::model::{NormalizationRequest, PlayerState, VolumeRequest, get_folders_list};
 
 /// Grouping of HTTP API handlers for the player.
@@ -26,22 +28,30 @@ impl PlayerController {
         player: Arc<Mutex<PlayerState>>,
     ) -> Result<impl Reply, Rejection> {
         if let Some(folder_name) = params.get("folder") {
-            let base = Path::new("./public/music");
-            let folder_path = base.join(folder_name);
-
-            if !folder_path.exists() || !folder_path.is_dir() {
-                return Ok(warp::reply::with_status(
-                    format!("Le dossier {:?} n'existe pas", folder_path),
-                    warp::http::StatusCode::BAD_REQUEST,
-                ));
-            }
+            // Le paramètre vient du réseau : il doit rester sous ./public/music.
+            // Réponse volontairement identique pour « hors base » et « inexistant »,
+            // pour ne pas renseigner un appelant sur l'arborescence du disque.
+            let folder_path = match resolve_within(Path::new("./public/music"), folder_name)
+                .filter(|p| p.is_dir())
+            {
+                Some(path) => path,
+                None => {
+                    return Ok(warp::reply::with_status(
+                        "Dossier introuvable".to_string(),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    ));
+                }
+            };
 
             let mut p = player.lock().unwrap();
             p.add_folder(&folder_path);
             p.play_next();
 
             Ok(warp::reply::with_status(
-                format!("Lecture du dossier {:?}", folder_path),
+                format!(
+                    "Lecture du dossier {:?}",
+                    folder_path.file_name().unwrap_or_default()
+                ),
                 warp::http::StatusCode::OK,
             ))
         } else {

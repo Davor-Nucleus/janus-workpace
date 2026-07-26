@@ -12,6 +12,7 @@ use warp::Reply;
 
 use crate::model::PlayerState;
 use janus_nucleus::logger::{log_error, log_info};
+use janus_nucleus::paths::resolve_within;
 
 pub struct PlayerController;
 
@@ -44,28 +45,25 @@ impl PlayerController {
         }
 
         if let Some(sound_name) = params.get("sound") {
+            // `sound_name` vient du réseau : `resolve_within` interdit d'en sortir
+            // (chemin absolu ou `..`). Si aucune extension n'est fournie, on tente
+            // mp3, wav puis flac — chaque tentative repasse par le même garde-fou.
             let base = Path::new("./public/soundboard");
-            let mut found = false;
-            let mut file_path = base.join(sound_name);
-            // Si l'utilisateur n'a pas mis d'extension, on tente mp3, wav, flac
-            if !file_path.exists() {
-                for ext in ["mp3", "wav", "flac"] {
-                    let try_path = base.join(format!("{}.{}", sound_name, ext));
-                    if try_path.exists() {
-                        file_path = try_path;
-                        found = true;
-                        break;
-                    }
+            let candidates = std::iter::once(sound_name.clone())
+                .chain(["mp3", "wav", "flac"].iter().map(|ext| format!("{}.{}", sound_name, ext)));
+
+            let file_path = match candidates
+                .filter_map(|name| resolve_within(base, &name))
+                .find(|path| path.is_file())
+            {
+                Some(path) => path,
+                None => {
+                    return Ok(warp::reply::with_status(
+                        "Son introuvable dans ./public/soundboard".to_string(),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    ));
                 }
-            } else {
-                found = true;
-            }
-            if !found || !file_path.is_file() {
-                return Ok(warp::reply::with_status(
-                    format!("Son {:?} introuvable dans ./public/soundboard", sound_name),
-                    warp::http::StatusCode::BAD_REQUEST,
-                ));
-            }
+            };
             // Joue le son du soundboard (via tokio spawn_blocking pour ne pas bloquer le runtime)
             tokio::task::spawn_blocking({
                 let file_path = file_path.clone();

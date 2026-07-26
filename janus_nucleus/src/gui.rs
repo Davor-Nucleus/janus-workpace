@@ -27,18 +27,13 @@ impl LogWindowHandle {
         window_title: String,
         class_name: String,
     ) {
-        // Définir le buffer global au démarrage de la fenêtre pour être sûr
-        // Note: l'appelant a probablement déjà appelé set_global_log_buffer_ptr
-        // Mais on garde une référence ici pour que `spawn` soit le point d'entrée
+        // `Arc::into_raw` sans `from_raw` correspondant : l'allocation est fuitée
+        // délibérément. C'est ce qui garantit que le pointeur global reste valide pour
+        // `wnd_proc`, qui tourne sur le thread de la fenêtre et n'a aucun moyen de
+        // maintenir l'`Arc` en vie de son côté. La fuite porte sur un seul buffer et
+        // dure le temps du processus.
         let arc_ptr = Arc::into_raw(log_buffer);
         crate::logger::set_global_log_buffer_ptr(arc_ptr);
-
-        // On recrée un Arc pour éviter la fuite mémoire (il sera drop à la fin du thread spawn s'il n'est pas utilisé ailleurs ?)
-        // Attention : Arc::into_raw consomme l'Arc. Il faut le reconstituer plus tard ou le garder en vie.
-        // Ici, on le passe en pointeur global statique. Le main doit garder son propre Arc ou on accepte que ce soit "leaké" intentionnellement
-        // pour la durée de vie de l'app.
-        // Mieux : on restaure l'Arc pour le passer au thread, et on set le ptr global juste pour wnd_proc.
-        // Pour simplifier : on clone l'Arc avant le spawn, on convertit le clone en raw.
 
         std::thread::spawn(move || {
             unsafe {

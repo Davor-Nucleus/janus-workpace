@@ -47,18 +47,22 @@ async fn main() {
     };
     let player = Arc::new(Mutex::new(PlayerState::new(stream_handle, initial_volume)));
 
-    // Détecte le port du programme musique via variable d'environnement (fallback 3001)
-    let music_port: u16 = std::env::var("PORT_MUSIC")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(3001);
+    // Port de JanusCore, lu dans env.json comme le reste. Il passait par une variable
+    // d'environnement que personne ne définit : la valeur retenue était toujours le
+    // repli 3001, et changer PORT_MUSIC dans env.json cassait la pause automatique.
+    let music_port = config.port_music.unwrap_or(3001);
 
     // Création des routes (soundboard uniquement)
     let routes = create_routes(player.clone(), music_port);
 
-    // Ajout du support CORS
+    // CORS restreint aux pages servies par praetorcast-core (cf. JanusCore).
+    let core_port = config.port.unwrap_or(3000);
+    let allowed_origins = [
+        format!("http://localhost:{}", core_port),
+        format!("http://127.0.0.1:{}", core_port),
+    ];
     let cors = warp::cors()
-        .allow_any_origin()
+        .allow_origins(allowed_origins.iter().map(String::as_str))
         .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
         .allow_headers(vec!["Content-Type"]);
 

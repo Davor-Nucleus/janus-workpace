@@ -6,6 +6,11 @@ use std::path::Path;
 /// Unified configuration structure for Janus Core applications.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct EnvConfig {
+    /// Port de praetorcast-core, qui sert les pages appelant ces serveurs :
+    /// il détermine les origines autorisées en CORS.
+    #[serde(rename = "PORT")]
+    pub port: Option<u16>,
+
     #[serde(rename = "PORT_MUSIC")]
     pub port_music: Option<u16>,
 
@@ -28,6 +33,7 @@ pub struct EnvConfig {
 impl Default for EnvConfig {
     fn default() -> Self {
         Self {
+            port: Some(3000),
             port_music: Some(3030),
             port_soundboard: Some(3003),
             volume: Some(1.0),
@@ -65,30 +71,37 @@ pub fn read_config() -> EnvConfig {
     }
 }
 
-/// Update a specific key in `env.json`.
-/// Creates the file if it doesn't exist.
+/// Met à jour une clé d'`env.json`, en préservant tout le reste du fichier.
+///
+/// Deux garde-fous, parce que ce fichier porte toute la configuration (ports,
+/// identifiants Twitch, secrets Discord) et qu'un simple changement de volume
+/// passe par ici :
+/// - un JSON illisible fait **échouer** l'opération au lieu de repartir d'un objet
+///   vide, ce qui effaçait silencieusement l'intégralité de la configuration ;
+/// - l'écriture passe par un fichier temporaire renommé, pour qu'une coupure ne
+///   laisse jamais un `env.json` tronqué.
 pub fn update_config_key(key: &str, value: Value) -> Result<(), String> {
     let path = Path::new("env.json");
 
-    // Read existing or create empty object
     let mut data: Value = if path.exists() {
-        match fs::read_to_string(path) {
-            Ok(content) => serde_json::from_str(&content).unwrap_or(serde_json::json!({})),
-            Err(e) => return Err(format!("Failed to read env.json: {}", e)),
-        }
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read env.json: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| {
+            format!("env.json est illisible ({e}) — mise à jour de '{key}' annulée pour ne pas écraser la configuration")
+        })?
     } else {
         serde_json::json!({})
     };
 
-    // Update key
     data[key] = value;
 
-    // Write back
-    match serde_json::to_string_pretty(&data) {
-        Ok(json_str) => match fs::write(path, json_str) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("Failed to write env.json: {}", e)),
-        },
-        Err(e) => Err(format!("Failed to serialize config: {}", e)),
-    }
+    let json_str = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, json_str).map_err(|e| format!("Failed to write env.json: {}", e))?;
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("Failed to replace env.json: {}", e)
+    })
 }

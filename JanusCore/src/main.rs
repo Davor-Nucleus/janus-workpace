@@ -64,9 +64,15 @@ async fn main() {
     // Création des routes
     let routes = create_routes(player);
 
-    // Ajout du support CORS
+    // CORS restreint aux pages servies par praetorcast-core. Avec `allow_any_origin`,
+    // n'importe quel site ouvert dans le navigateur pouvait piloter le lecteur.
+    let core_port = config.port.unwrap_or(3000);
+    let allowed_origins = [
+        format!("http://localhost:{}", core_port),
+        format!("http://127.0.0.1:{}", core_port),
+    ];
     let cors = warp::cors()
-        .allow_any_origin()
+        .allow_origins(allowed_origins.iter().map(String::as_str))
         .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
         .allow_headers(vec!["Content-Type"]);
 
