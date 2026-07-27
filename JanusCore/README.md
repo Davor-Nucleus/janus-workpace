@@ -9,8 +9,22 @@ Serveur audio headless en Rust pour la lecture de musique. Conçu pour être con
 - **Navigation** : piste suivante / précédente avec historique
 - **Normalisation EBU R128** : analyse automatique de la loudness à −14.0 LUFS avec cache, activable/désactivable à chaud
 - **Métadonnées** : lecture des tags ID3/Vorbis (titre, artiste, album, date, pochette en base64)
+- **API REST** : contrôle complet de la lecture, du volume et de l'état depuis n'importe quel client HTTP
+- **Volume persistant** : sauvegardé dans `env.json` et réappliqué au démarrage
+- **Auto-play** : enchaînement automatique des pistes de la playlist
 - **WebSocket** : flux temps réel de l'état du lecteur pour les overlays
 - **Fenêtre de logs Windows** : fenêtre Win32 optionnelle affichant les logs en temps réel
+
+## Sommaire
+
+- [Fonctionnalités](#fonctionnalités)
+- [Configuration](#configuration)
+- [Structure des dossiers](#structure-des-dossiers)
+- [API REST](#api-rest)
+- [Normalisation EBU R128](#normalisation-ebu-r128)
+- [Fenêtre GUI (Windows)](#fenêtre-gui-windows)
+- [Build](#build)
+- [Structure du code](#structure-du-code)
 
 ## Configuration
 

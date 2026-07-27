@@ -17,8 +17,24 @@ Ce workspace Cargo contient l'infrastructure audio pour le système de contrôle
 2. 🔊 **PhonosCore** : Le serveur de soundboard (effets sonores, sans normalisation automatique). 
 3. ⚙️ **janus_nucleus** : Une bibliothèque partagée contenant la logique de configuration, de journalisation (logs) et d'interface graphique (GUI).
 
+## ✨ Fonctionnalités principales
+
+- **Deux serveurs audio headless** — musique (JanusCore) et soundboard (PhonosCore), pilotables indépendamment.
+- **Multi-format** — MP3, FLAC, WAV, AAC et MP4 décodés via Symphonia.
+- **Playlists par dossier** — un dossier de `public/music/` = une playlist, avec lecture aléatoire.
+- **Navigation complète** — piste suivante / précédente avec historique, pause, reprise, arrêt.
+- **Normalisation EBU R128** — cible −14 LUFS avec cache par fichier, activable/désactivable à chaud.
+- **Ducking automatique** — PhonosCore met la musique de JanusCore en pause pendant un effet sonore, puis la reprend.
+- **Métadonnées enrichies** — tags ID3/Vorbis (titre, artiste, album, date) et pochette en base64.
+- **API REST complète** — lecture, volume, état et normalisation exposés en HTTP.
+- **WebSocket temps réel** — flux de l'état du lecteur pour les overlays OBS.
+- **Volume persistant** — sauvegardé dans `env.json` et réappliqué au démarrage.
+- **Fenêtre de logs Windows** — GUI Win32 optionnelle affichant les logs en temps réel.
+- **CORS ouvert** — appels directs depuis n'importe quel frontend web.
+
 ## 📋 Sommaire
 
+- [Fonctionnalités principales](#-fonctionnalités-principales)
 - [Prérequis](#-prérequis)
 - [Architecture](#-architecture)
 - [Configuration](#-configuration)

@@ -10,10 +10,24 @@ Le PhonosCore est un player headless qui lit des effets sonores stockés localem
 - **Lecture de sons du dossier**: joue un fichier audio par son nom, avec ou sans extension (`mp3`, `wav`, `flac`…)
 - **Liste des sons disponibles**: expose un endpoint pour récupérer la liste des fichiers audio disponibles
 - **Arrêt global**: stoppe tous les sons en cours de la soundboard
+- **Pause automatique de la musique**: met JanusCore en pause avant de jouer un effet, puis reprend la lecture
+- **Sons simultanés**: plusieurs sinks en parallèle, chacun avec son propre canal d’arrêt
 - **Volume persistant**: garde le volume courant dans `env.json` et l’applique aux nouveaux sons
 - **Compatibilité Windows**: définit le titre de la console via WinAPI (optionnel sur d’autres OS)
 - **CORS ouvert**: accepte les requêtes cross-origin (GET/POST/etc.)
--. **GUI Windows optionnelle (logs en temps réel)**: petite fenêtre "phonosCore - Logs" affichant tous les logs en miroir de la console, avec arrêt propre de l’application à la fermeture (icône intégrée).
+- **GUI Windows optionnelle (logs en temps réel)**: petite fenêtre "phonosCore - Logs" affichant tous les logs en miroir de la console, avec arrêt propre de l’application à la fermeture (icône intégrée).
+
+## 📋 Sommaire
+
+- [Fonctionnalités](#-fonctionnalités)
+- [Installation](#-installation)
+- [Structure des dossiers](#-structure-des-dossiers)
+- [Configuration](#-configuration)
+- [API Endpoints](#-api-endpoints)
+- [Développement](#-développement)
+- [Tests](#-tests)
+- [Améliorations futures](#-améliorations-futures)
+- [Licence](#-licence)
 
 ## 🚀 Installation
 
