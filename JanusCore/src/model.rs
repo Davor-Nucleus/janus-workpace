@@ -354,8 +354,10 @@ impl PlayerState {
         }
         if meta.cover_art.is_none() {
             if let Some(visual) = rev.visuals().first() {
-                let encoded = STANDARD.encode(&*visual.data);
-                meta.cover_art = Some(format!("data:{};base64,{}", visual.media_type, encoded));
+                if let Some(mime) = sanitize_cover_mime(&visual.media_type) {
+                    let encoded = STANDARD.encode(&*visual.data);
+                    meta.cover_art = Some(format!("data:{};base64,{}", mime, encoded));
+                }
             }
         }
     }
@@ -442,6 +444,39 @@ impl PlayerState {
     }
 }
 
+/// Types d'images acceptés pour une pochette embarquée.
+const COVER_MIME_ALLOWLIST: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/// Valide le `media_type` d'une pochette embarquée avant de le coller dans une URL `data:`.
+///
+/// Ce champ vient du tag du fichier audio, donc d'une source non maîtrisée : un mp3
+/// récupéré ailleurs peut y placer n'importe quoi. Sans filtre, la chaîne ressortait
+/// telle quelle dans `data:{media_type};base64,...`, et un guillemet suffisait à sortir
+/// de l'attribut `src` côté overlay. La liste blanche est la première barrière ; la
+/// construction par API DOM dans `music_current.html` est la seconde.
+///
+/// Tolère les variantes de casse et les paramètres (`image/png; charset=binary`), et
+/// accepte les alias courants que produisent certains encodeurs.
+fn sanitize_cover_mime(media_type: &str) -> Option<&'static str> {
+    let base = media_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+
+    let normalized = match base.as_str() {
+        "image/jpg" | "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        other => other,
+    };
+
+    COVER_MIME_ALLOWLIST
+        .iter()
+        .find(|allowed| **allowed == normalized)
+        .copied()
+}
+
 /// Return the list of folders directly under `./public/music`.
 pub fn get_folders_list() -> Vec<String> {
     let music_path = Path::new("./public/music");
@@ -459,4 +494,53 @@ pub fn get_folders_list() -> Vec<String> {
         }
     }
     folders
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepte_les_types_usuels() {
+        assert_eq!(sanitize_cover_mime("image/png"), Some("image/png"));
+        assert_eq!(sanitize_cover_mime("image/jpeg"), Some("image/jpeg"));
+        assert_eq!(sanitize_cover_mime("image/gif"), Some("image/gif"));
+        assert_eq!(sanitize_cover_mime("image/webp"), Some("image/webp"));
+    }
+
+    #[test]
+    fn normalise_casse_alias_et_parametres() {
+        assert_eq!(sanitize_cover_mime("IMAGE/PNG"), Some("image/png"));
+        assert_eq!(sanitize_cover_mime("image/jpg"), Some("image/jpeg"));
+        assert_eq!(sanitize_cover_mime("  image/png  "), Some("image/png"));
+        assert_eq!(
+            sanitize_cover_mime("image/png; charset=binary"),
+            Some("image/png")
+        );
+    }
+
+    #[test]
+    fn refuse_une_sortie_d_attribut() {
+        // Le motif exact qui permettait d'echapper au src="" de l'overlay.
+        assert_eq!(
+            sanitize_cover_mime("image/png\" onerror=\"alert(1)"),
+            None
+        );
+        assert_eq!(sanitize_cover_mime("image/png'><script>"), None);
+    }
+
+    #[test]
+    fn refuse_les_types_hors_liste() {
+        assert_eq!(sanitize_cover_mime("text/html"), None);
+        assert_eq!(sanitize_cover_mime("image/svg+xml"), None); // SVG = script
+        assert_eq!(sanitize_cover_mime(""), None);
+    }
+
+    #[test]
+    fn la_valeur_retournee_ne_vient_jamais_de_l_entree() {
+        // La sortie est toujours un &'static str de la liste blanche : meme sur une
+        // entree valide, aucun octet de l'entree ne transite vers l'URL data:.
+        let sortie = sanitize_cover_mime("image/PNG; x=1").unwrap();
+        assert!(COVER_MIME_ALLOWLIST.contains(&sortie));
+    }
 }
