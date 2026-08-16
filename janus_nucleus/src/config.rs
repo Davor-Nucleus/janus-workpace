@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
+use std::net::IpAddr;
 use std::path::Path;
 
 /// Unified configuration structure for Janus Core applications.
@@ -57,6 +58,29 @@ pub struct EnvConfig {
     /// Pendant de `normalizationEnabled`, séparé pour la même raison que le volume.
     #[serde(rename = "webRadioNormalization")]
     pub webradio_normalization: Option<bool>,
+
+    #[serde(rename = "PORT_ORPHEUS")]
+    pub port_orpheus: Option<u16>,
+
+    #[serde(rename = "ORPHEUS_VOLUME")]
+    pub orpheus_volume: Option<f32>,
+
+    #[serde(rename = "orpheusBind")]
+    pub orpheus_bind: Option<String>,
+
+    #[serde(rename = "orpheusBitrate")]
+    pub orpheus_bitrate: Option<u16>,
+
+    #[serde(rename = "orpheusCoreGui")]
+    pub orpheus_core_gui: Option<bool>,
+
+    /// Graine du générateur. Absente : tirée au démarrage, donc musique différente
+    /// à chaque lancement. Fixée : la même session se rejoue à l'identique.
+    #[serde(rename = "orpheusSeed")]
+    pub orpheus_seed: Option<u64>,
+
+    #[serde(rename = "orpheusBpm")]
+    pub orpheus_bpm: Option<u16>,
 }
 
 impl Default for EnvConfig {
@@ -77,6 +101,14 @@ impl Default for EnvConfig {
             webradio_bitrate: Some(192),
             webradio_core_gui: Some(true),
             webradio_normalization: Some(true),
+            // 3005 est pris par WebRadioCore.
+            port_orpheus: Some(3006),
+            orpheus_volume: Some(0.8),
+            orpheus_bind: Some("0.0.0.0".to_string()),
+            orpheus_bitrate: Some(192),
+            orpheus_core_gui: Some(true),
+            orpheus_seed: None,
+            orpheus_bpm: Some(92),
         }
     }
 }
@@ -96,6 +128,35 @@ impl EnvConfig {
             format!("http://localhost:{port}"),
             format!("http://127.0.0.1:{port}"),
         ]
+    }
+}
+
+/// Interprète une adresse d'écoute, avec repli **fermé** en cas d'erreur.
+///
+/// Le sens du repli est le point important : une valeur illisible ramène sur la
+/// boucle locale, jamais sur `0.0.0.0`. Une coquille dans `env.json` doit fermer
+/// le serveur, pas l'ouvrir au réseau. Mutualisé pour cette raison — c'est une
+/// décision de sécurité, et deux copies finiraient par ne plus dire la même chose.
+pub fn parse_bind(setting: &str, key: &str) -> IpAddr {
+    match setting.parse() {
+        Ok(ip) => ip,
+        Err(_) => {
+            crate::logger::log_error(format!(
+                "{key} « {setting} » illisible — repli sur 127.0.0.1"
+            ));
+            IpAddr::from([127, 0, 0, 1])
+        }
+    }
+}
+
+/// Écrit une clé d'`env.json` et journalise l'échec au lieu de le remonter.
+///
+/// Le pendant « au mieux » d'[`update_config_key`], pour les réglages dont la
+/// non-persistance ne doit pas faire échouer l'action en cours : ne pas réussir à
+/// enregistrer un volume n'empêche pas de l'appliquer.
+pub fn persist_key(key: &str, value: Value) {
+    if let Err(e) = update_config_key(key, value) {
+        crate::logger::log_error(format!("Clé '{key}' non persistée dans env.json : {e}"));
     }
 }
 
@@ -176,6 +237,25 @@ mod tests {
                 "http://127.0.0.1:8080".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn une_adresse_valide_est_respectee() {
+        assert_eq!(
+            parse_bind("192.168.1.10", "testBind"),
+            IpAddr::from([192, 168, 1, 10])
+        );
+        assert_eq!(parse_bind("0.0.0.0", "testBind"), IpAddr::from([0, 0, 0, 0]));
+    }
+
+    /// Le sens du repli est une décision de sécurité : une coquille doit **fermer**
+    /// le serveur, jamais l'ouvrir au réseau.
+    #[test]
+    fn une_adresse_illisible_se_replie_sur_la_boucle_locale() {
+        for mauvais in ["", "pas-une-ip", "999.1.1.1", "0.0.0.0 ", "localhost"] {
+            let ip = parse_bind(mauvais, "testBind");
+            assert!(ip.is_loopback(), "« {mauvais} » a donné {ip}, non fermé");
+        }
     }
 
     /// `PORT` absent d'`env.json` est le cas courant côté JanusCore : le repli doit

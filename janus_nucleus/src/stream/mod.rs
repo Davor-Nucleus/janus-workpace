@@ -18,12 +18,18 @@
 //! a ni en-tête de flux à rejouer, ni reprise à négocier.
 
 pub mod encoder;
+pub mod engine;
 pub mod hub;
+#[cfg(feature = "http")]
+pub mod http;
 pub mod pacer;
 
 pub use encoder::Mp3Encoder;
+pub use engine::{spawn_encode_loop, DEFAULT_LEAD};
 pub use hub::{StreamHub, Subscription};
 pub use pacer::Pacer;
+#[cfg(feature = "http")]
+pub use http::stream_response;
 
 /// Fréquence d'échantillonnage du flux encodé.
 ///

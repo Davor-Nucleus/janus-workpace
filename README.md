@@ -11,22 +11,26 @@
 
 ---
 
-Ce workspace Cargo contient l'infrastructure audio pour le système de contrôle de stream. Il est composé de quatre membres :
+Ce workspace Cargo contient l'infrastructure audio pour le système de contrôle de stream. Il est composé de cinq membres :
 
 1. 🎵 **JanusCore** : Le serveur de lecture de musique (MP3/FLAC/WAV/AAC/MP4) avec normalisation EBU R128.
 2. 🔊 **PhonosCore** : Le serveur de soundboard (effets sonores, sans normalisation automatique). 
 3. 📻 **WebRadioCore** : La webradio — diffuse la musique en MP3 sur HTTP, pour l'écouter depuis un autre appareil du réseau.
-4. ⚙️ **janus_nucleus** : Une bibliothèque partagée contenant la logique de configuration, de journalisation (logs), d'interface graphique (GUI), de diffusion audio et de lecture des métadonnées.
+4. 🎹 **OrpheusCore** : Le générateur — **synthétise** de la synthwave en continu et la diffuse en MP3. Aucun fichier audio.
+5. ⚙️ **janus_nucleus** : Une bibliothèque partagée contenant la logique de configuration, de journalisation (logs), d'interface graphique (GUI), de diffusion audio et de lecture des métadonnées.
 
 > [!NOTE]
-> JanusCore et PhonosCore jouent sur **la carte son du PC**. WebRadioCore, lui, n'ouvre aucun périphérique
-> audio : il décode à la cadence de l'horloge et encode en MP3. C'est un lecteur **indépendant**, avec sa
-> propre playlist — il ne rediffuse pas ce que joue JanusCore, les deux tournent en parallèle.
+> JanusCore et PhonosCore jouent sur **la carte son du PC**. WebRadioCore et OrpheusCore n'ouvrent aucun
+> périphérique audio : ils produisent leur flux à la cadence de l'horloge et l'encodent en MP3. Les quatre
+> serveurs sont indépendants et peuvent tourner en parallèle.
+>
+> Seul OrpheusCore ne lit **aucun** fichier : sa musique n'existe nulle part avant d'être calculée.
 
 ## ✨ Fonctionnalités principales
 
-- **Trois serveurs audio headless** — musique (JanusCore), soundboard (PhonosCore) et webradio (WebRadioCore), pilotables indépendamment.
+- **Quatre serveurs audio headless** — musique (JanusCore), soundboard (PhonosCore), webradio (WebRadioCore) et génération (OrpheusCore), pilotables indépendamment.
 - **Diffusion HTTP en MP3** — `GET /stream.mp3` : écoute depuis un navigateur, VLC, OBS ou un téléphone du réseau local.
+- **Synthwave générée en direct** — oscillateurs anti-repliés, filtres résonants, batterie synthétisée et arrangement aléatoire reproductible par graine.
 - **Multi-format** — MP3, FLAC, WAV, AAC et MP4 décodés via Symphonia.
 - **Playlists par dossier** — un dossier de `public/music/` = une playlist, avec lecture aléatoire.
 - **Navigation complète** — piste suivante / précédente avec historique, pause, reprise, arrêt.
@@ -78,6 +82,10 @@ janus core/
 │   ├── src/             # Code source
 │   ├── public/music/    # Dossiers de musique
 │   └── env.json         # Configuration WebRadioCore
+├── OrpheusCore/         # Generateur Synthwave (aucun fichier audio)
+│   ├── src/synth/       # Oscillateurs, enveloppes, filtres, batterie, effets
+│   ├── src/compose/     # Theorie musicale et arrangement
+│   └── env.json         # Configuration OrpheusCore
 ├── janus_nucleus/       # Lib partagée (Config, Logger, GUI, Stream)
 │   └── src/             # Code source commun
 ├── Cargo.toml           # Configuration workspace
@@ -131,6 +139,21 @@ Chaque projet possède son propre fichier `env.json` dans son répertoire respec
 ```
 </details>
 
+<details>
+<summary><b>OrpheusCore (<code>OrpheusCore/env.json</code>)</b></summary>
+
+```json
+{
+  "PORT_ORPHEUS": 3006,
+  "ORPHEUS_VOLUME": 0.8,
+  "orpheusBind": "0.0.0.0",
+  "orpheusBitrate": 192,
+  "orpheusCoreGui": true,
+  "orpheusBpm": 92
+}
+```
+</details>
+
 ### Paramètres de Configuration
 
 - `PORT_MUSIC` : Port API pour JanusCore (défaut: 3030 si non spécifié).
@@ -146,10 +169,18 @@ Chaque projet possède son propre fichier `env.json` dans son répertoire respec
 - `webRadioCoreGui` : Active/Désactive la fenêtre de logs native pour WebRadioCore (défaut: true).
 - `webRadioNormalization` : Active la normalisation EBU R128 pour la webradio (défaut: true). Clé distincte de `normalizationEnabled`, pour la même raison que le volume.
 
+- `PORT_ORPHEUS` : Port API et flux pour OrpheusCore (défaut: 3006).
+- `ORPHEUS_VOLUME` : Volume du générateur (0.0 à 1.0, défaut: 0.8). Clé dédiée, comme les précédentes.
+- `orpheusBind` : Interface d'écoute (défaut: `0.0.0.0`). Une valeur illisible fait replier sur `127.0.0.1`.
+- `orpheusBitrate` : Débit du flux MP3 en kbps (défaut: 192).
+- `orpheusCoreGui` : Active/Désactive la fenêtre de logs native (défaut: true).
+- `orpheusBpm` : Tempo de consigne (défaut: 92). Le tempo réel est tiré à ±6 BPM autour de cette valeur.
+- `orpheusSeed` : Graine du générateur. **Absente**, elle est tirée au démarrage : chaque lancement produit une musique différente. **Fixée**, la même session se rejoue à l'identique.
+
 > [!WARNING]
-> Avec `webRadioBind` à `0.0.0.0`, **l'API de contrôle est exposée au réseau local**, pas seulement le flux.
-> Le CORS ne protège que les navigateurs : n'importe qui sur le réseau peut appeler `/api/folder` avec
-> `curl`. Acceptable sur un réseau domestique de confiance ; passer à `127.0.0.1` sinon.
+> Avec `webRadioBind` ou `orpheusBind` à `0.0.0.0`, **l'API de contrôle est exposée au réseau local**, pas
+> seulement le flux. Le CORS ne protège que les navigateurs : n'importe qui sur le réseau peut appeler
+> `/api/folder` avec `curl`. Acceptable sur un réseau domestique de confiance ; passer à `127.0.0.1` sinon.
 
 ---
 
@@ -195,6 +226,16 @@ cargo run
 > **Flux** : `http://<ip-locale>:3005/stream.mp3` — à ouvrir dans VLC, un navigateur ou sur un téléphone
 > connecté au même réseau. La radio diffuse du silence tant qu'aucune playlist n'est chargée : on peut donc
 > s'y connecter avant de lancer la musique.
+
+### Lancer OrpheusCore (Synthwave générée)
+
+```bash
+cd OrpheusCore
+cargo run
+```
+> [!NOTE]
+> **Flux** : `http://<ip-locale>:3006/stream.mp3`. Rien à préparer : la musique commence dès le démarrage,
+> il n'y a ni playlist ni dossier à fournir.
 
 ---
 
@@ -284,6 +325,39 @@ morceau suivant.
   précharge la piste suivante. Une piste jamais analysée passe une fois sans gain plutôt que de figer le
   flux pour tous les auditeurs.
 
+### 🎹 OrpheusCore (Synthwave générée)
+
+| Méthode | Route | Rôle |
+|---|---|---|
+| GET | `/stream.mp3` | Le flux, 48 kHz stéréo |
+| GET | `/api/status` | `{bpm, key, chord, bar, section, energy, seed, volume, listeners, …}` |
+| GET / POST | `/api/volume` | Corps : `{"volume": 0.5}` |
+| GET | `/api/volume/subtract` | Baisse d'un cran (−0,05) |
+| GET | `/api/volume/add` | Monte d'un cran (+0,05) |
+| GET | `/api/regenerate` | Nouvelle graine : autre tonalité, autre progression, autre tempo — sans couper le flux |
+
+Les deux routes à cran sont en GET et sans corps, pour être appelables depuis un bouton de Stream Deck.
+Arrivées à 0 ou à 1 elles ne font plus rien plutôt que d'échouer : une touche maintenue enfoncée ne doit pas
+se mettre à renvoyer des erreurs.
+
+#### Comment la musique est fabriquée
+
+Rien n'est échantillonné : chaque son est calculé.
+
+- **Oscillateurs anti-repliés (PolyBLEP)** — une dent de scie naïve replie ses harmoniques au-dessus de
+  Nyquist et sonne métallique ; la correction polynomiale au point de discontinuité l'évite.
+- **Filtre résonant TPT** — la forme à transformation préservant la topologie, inconditionnellement stable,
+  et non la forme de Chamberlin, qui diverge quand la coupure monte à forte résonance.
+- **Quatre voix** — nappe (3 scies désaccordées + sous-octave), basse, arpège pincé, lead avec glissando.
+- **Batterie synthétisée** — grosse caisse à hauteur descendante, caisse claire à réverbération *gatée*,
+  charleys en bruit filtré.
+- **Sidechain** — chaque grosse caisse fait plonger nappe, basse et arpège d'environ 9 dB puis les laisse
+  remonter. C'est le « pompage » caractéristique du genre.
+- **Arrangement** — progressions mineures classiques (`i–VI–III–VII`, `i–VII–VI–VII`, …), niveau d'énergie
+  qui évolue toutes les 8 mesures et décide quels instruments jouent et combien le filtre s'ouvre.
+- **Reproductible** — tout l'aléa vient d'une graine unique : à graine égale, la musique est identique
+  échantillon pour échantillon.
+
 ### 🎧 Audio
 
 #### Formats Supportés
@@ -321,23 +395,33 @@ cargo check --workspace
 - **Rodio** : Bibliothèque audio pour la lecture de fichiers
 - **Symphonia** : Décodage audio multi-format
 - **EBUR128** : Normalisation audio selon la norme EBU R128
-- **mp3lame-encoder** : Encodage MP3 du flux WebRadioCore (LAME compilé depuis ses sources, aucune DLL à déployer — licence LGPL-3.0)
+- **mp3lame-encoder** : Encodage MP3 des flux WebRadioCore et OrpheusCore (LAME compilé depuis ses sources, aucune DLL à déployer — licence LGPL-3.0)
 - **Tokio** : Runtime asynchrone pour Rust
 - **Serde/Serde JSON** : Sérialisation/désérialisation JSON
 
 ### Les features de janus_nucleus
 
-Trois modules optionnels, activés à la demande par les binaires qui en ont besoin :
+Quatre modules optionnels, activés à la demande par les binaires qui en ont besoin :
 
 | Feature | Contenu | Utilisée par |
 |---|---|---|
-| `stream` | Cadenceur horloge, encodeur MP3 (LAME), diffusion un-vers-N | WebRadioCore |
+| `stream` | Cadenceur horloge, encodeur MP3 (LAME), diffusion un-vers-N, boucle de production | WebRadioCore, OrpheusCore |
+| `http` | Réponse HTTP d'un flux continu (implique `stream`, tire `warp`) | WebRadioCore, OrpheusCore |
 | `metadata` | Tags ID3/Vorbis, pochette base64, validation du MIME de pochette | JanusCore, WebRadioCore |
 | `music` | Découverte des playlists : listage des dossiers, collecte récursive et mélange des pistes | JanusCore, WebRadioCore |
 
-Les modules **toujours disponibles** sont `config` (dont la politique d'origines CORS), `logger`, `paths`
-(garde anti-traversée), `audio` (normalisation EBU R128), `console` (titre de la fenêtre) et, sous Windows,
-`gui`.
+Les modules **toujours disponibles** sont `config` (politique d'origines CORS, analyse d'adresse d'écoute,
+persistance de clés), `logger`, `paths` (garde anti-traversée), `audio` (normalisation EBU R128), `console`
+(titre de la fenêtre) et, sous Windows, `gui`.
+
+Trois briques ont été mutualisées parce que leur divergence coûterait cher :
+
+- **`stream::http::stream_response`** — les en-têtes d'un flux sans fin. Ajouter un `Content-Length`, même
+  « pour bien faire », le casse : c'est son absence qui fait basculer hyper en `Transfer-Encoding: chunked`.
+- **`config::parse_bind`** — une adresse illisible se replie sur `127.0.0.1`, **jamais** sur `0.0.0.0`. Une
+  coquille dans `env.json` doit fermer le serveur, pas l'ouvrir au réseau.
+- **`stream::spawn_encode_loop`** — la boucle produire → encoder → publier → cadencer. Les deux serveurs de
+  flux ne diffèrent que par le remplissage d'un bloc de PCM ; tout le reste leur est commun.
 
 `stream` est isolée derrière une feature pour que JanusCore et PhonosCore n'aient pas à compiler LAME
 depuis ses sources C :
@@ -351,6 +435,19 @@ cargo build --workspace              # LAME compilé une fois (les features sont
 `metadata` est partagée plutôt que dupliquée parce qu'elle contient `sanitize_cover_mime`, un **contrôle de
 sécurité** : il empêche un `media_type` forgé dans un tag de s'échapper de l'attribut `src` d'un overlay.
 Une seconde copie de ce contrôle finirait tôt ou tard par diverger de la première.
+
+### Le profil de compilation d'OrpheusCore
+
+La racine du workspace force `opt-level = 2` sur OrpheusCore, y compris en debug :
+
+```toml
+[profile.dev.package.OrpheusCore]
+opt-level = 2
+```
+
+Sa synthèse travaille échantillon par échantillon — environ 96 000 passages de boucle par seconde d'audio.
+Non optimisée, elle n'atteint pas le temps réel et le flux hacherait. Les autres crates n'en ont pas besoin :
+elles ne font que décoder.
 
 ### CORS
 Les deux serveurs ont le support CORS activé pour permettre les requêtes depuis des applications web frontend.

@@ -18,6 +18,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "OrpheusCore"
+version = "0.1.0"
+dependencies = [
+ "janus_nucleus",
+ "rand",
+ "serde",
+ "serde_json",
+ "tokio",
+ "warp",
+ "winapi",
+ "winres",
+]
+
+[[package]]
 name = "PhonosCore"
 version = "0.1.0"
 dependencies = [
@@ -38,14 +52,12 @@ dependencies = [
 name = "WebRadioCore"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "futures",
  "janus_nucleus",
  "rodio",
  "serde",
  "serde_json",
  "tokio",
- "tokio-stream",
  "warp",
  "winapi",
  "winres",
@@ -856,6 +868,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "walkdir",
+ "warp",
  "widestring",
  "winapi",
 ]

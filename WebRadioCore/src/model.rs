@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use janus_nucleus::audio::NormalizationManager;
-use janus_nucleus::config::update_config_key;
-use janus_nucleus::logger::{log_error, log_info};
+use janus_nucleus::config::persist_key;
+use janus_nucleus::logger::log_info;
 use janus_nucleus::music::{collect_tracks, list_folders};
 
 pub use janus_nucleus::music::MUSIC_ROOT;
@@ -171,9 +171,7 @@ impl RadioState {
     /// et PhonosCore : la radio est seule à l'écrire, donc aucun conflit d'écrivains.
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
-        if let Err(e) = update_config_key("WEBRADIO_VOLUME", serde_json::json!(self.volume)) {
-            log_error(format!("Volume non persisté dans env.json : {e}"));
-        }
+        persist_key("WEBRADIO_VOLUME", serde_json::json!(self.volume));
     }
 
     pub fn generation(&self) -> u64 {

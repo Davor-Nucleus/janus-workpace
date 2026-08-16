@@ -1,8 +1,15 @@
 [workspace]
 members = [
     "JanusCore",
+    "OrpheusCore",
     "PhonosCore",
     "WebRadioCore",
     "janus_nucleus"
 ]
 resolver = "2"
+
+# Le DSP d'OrpheusCore travaille échantillon par échantillon : en debug non
+# optimisé il n'atteint pas le temps réel, et le flux hacherait. Les autres crates
+# restent en debug pur, eux ne font que décoder.
+[profile.dev.package.OrpheusCore]
+opt-level = 2

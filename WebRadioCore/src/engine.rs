@@ -1,12 +1,11 @@
 //! Producteur du flux : décodage → rééchantillonnage → gain → MP3 → diffusion.
 
-use bytes::Bytes;
 use rodio::source::UniformSourceIterator;
 use rodio::Decoder;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -14,7 +13,7 @@ use std::time::Duration;
 use janus_nucleus::audio::NormalizationManager;
 use janus_nucleus::logger::{log_error, log_info};
 use janus_nucleus::stream::{
-    Mp3Encoder, Pacer, StreamHub, CHUNK_FRAMES, CHUNK_SAMPLES, OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE,
+    spawn_encode_loop, StreamHub, OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE,
 };
 
 use crate::model::RadioState;
@@ -33,15 +32,8 @@ struct Track {
     gain: f32,
 }
 
-/// Démarre le moteur sur son propre fil.
-///
-/// Un `std::thread` et non une tâche tokio : décodage et encodage LAME sont du
-/// calcul bloquant, qui monopoliserait un fil du runtime et retarderait les
-/// réponses HTTP.
-///
-/// L'encodeur est construit ici, avant le lancement du fil, pour qu'une
-/// configuration invalide échoue au démarrage plutôt que silencieusement dans un
-/// fil détaché.
+/// Démarre le moteur : la boucle est celle de `janus_nucleus`, seul le
+/// remplissage des blocs est propre à la webradio.
 pub fn spawn(
     state: Arc<Mutex<RadioState>>,
     hub: Arc<StreamHub>,
@@ -49,27 +41,10 @@ pub fn spawn(
     lead: Duration,
     shutdown: Arc<AtomicBool>,
 ) -> Result<JoinHandle<()>, String> {
-    let encoder = Mp3Encoder::new(OUTPUT_SAMPLE_RATE, OUTPUT_CHANNELS, bitrate_kbps)?;
-
-    thread::Builder::new()
-        .name("webradio-engine".to_string())
-        .spawn(move || run(state, hub, encoder, lead, shutdown))
-        .map_err(|e| format!("Impossible de démarrer le moteur audio : {e}"))
-}
-
-fn run(
-    state: Arc<Mutex<RadioState>>,
-    hub: Arc<StreamHub>,
-    mut encoder: Mp3Encoder,
-    lead: Duration,
-    shutdown: Arc<AtomicBool>,
-) {
-    let mut pacer = Pacer::new(OUTPUT_SAMPLE_RATE, lead);
-    let mut pcm = vec![0i16; CHUNK_SAMPLES];
     let mut track: Option<Track> = None;
     let mut generation = u64::MAX; // force une resynchronisation au premier tour
 
-    while !shutdown.load(Ordering::Relaxed) {
+    spawn_encode_loop(hub, bitrate_kbps, lead, shutdown, "webradio", move |pcm| {
         let (current_generation, volume, paused) = {
             let s = state.lock().unwrap();
             (s.generation(), s.volume(), s.is_paused())
@@ -82,38 +57,19 @@ fn run(
         }
 
         // En pause, on ne tire rien de la piste : elle n'est pas consommée, donc la
-        // reprise repart exactement où elle s'était arrêtée. Le `Pacer` continue de
+        // reprise repart exactement où elle s'était arrêtée. La boucle continue de
         // cadencer et le hub reçoit du silence encodé, si bien que le flux ne se
         // ferme pas et qu'aucun auditeur n'est déconnecté.
         let filled = if paused {
             0
         } else {
-            fill_chunk(&mut pcm, &mut track, &state, volume)
+            fill_chunk(pcm, &mut track, &state, volume)
         };
         // Rien à jouer, ou piste plus courte que le bloc : on complète en silence
         // plutôt que de s'arrêter. Un auditeur peut ainsi se connecter avant toute
         // playlist et entendre la musique démarrer, sans se reconnecter.
         pcm[filled..].fill(0);
-
-        match encoder.encode_interleaved(&pcm) {
-            // LAME retient les échantillons jusqu'à pouvoir sortir une trame
-            // complète : un retour vide est normal.
-            Ok(bytes) if bytes.is_empty() => {}
-            Ok(bytes) => hub.publish(Bytes::from(bytes)),
-            Err(e) => log_error(format!("Encodage MP3 : {e}")),
-        }
-
-        pacer.commit(CHUNK_FRAMES as u64);
-    }
-
-    // Écoule ce que LAME retient encore, pour que les derniers auditeurs
-    // reçoivent une trame complète plutôt qu'une trame tronquée.
-    if let Ok(reste) = encoder.flush() {
-        if !reste.is_empty() {
-            hub.publish(Bytes::from(reste));
-        }
-    }
-    log_info("Moteur de diffusion arrêté".to_string());
+    })
 }
 
 /// Remplit `pcm` avec les échantillons disponibles ; renvoie la quantité écrite.

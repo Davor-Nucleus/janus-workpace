@@ -1,6 +1,5 @@
 //! Handlers Warp de WebRadioCore.
 
-use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -9,15 +8,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::sleep;
-use warp::http::{Response, StatusCode};
-use warp::hyper::Body;
+use warp::http::StatusCode;
 use warp::ws::{Message, Ws};
 use warp::{Rejection, Reply};
 
 use janus_nucleus::logger::log_info;
 use janus_nucleus::metadata::read_metadata;
 use janus_nucleus::paths::resolve_within;
-use janus_nucleus::stream::StreamHub;
+use janus_nucleus::stream::{stream_response, StreamHub};
 
 use crate::model::{get_folders_list, RadioState, MUSIC_ROOT};
 
@@ -49,28 +47,10 @@ fn current_metadata(state: &Mutex<RadioState>) -> Option<serde_json::Value> {
 pub struct RadioController;
 
 impl RadioController {
-    /// Le flux lui-même.
-    ///
-    /// Aucun `Content-Length` : hyper bascule alors en `Transfer-Encoding:
-    /// chunked`, ce qu'attend un flux sans fin. Les navigateurs envoient parfois
-    /// `Range: bytes=0-` sur une balise `<audio>` ; on l'ignore et on répond 200,
-    /// d'où l'`Accept-Ranges: none` qui le leur annonce.
+    /// Le flux lui-même. Les en-têtes sont ceux de
+    /// [`janus_nucleus::stream::stream_response`], communs aux serveurs de flux.
     pub async fn handle_stream(ctx: Arc<RadioContext>) -> Result<impl Reply, Infallible> {
-        // L'abonnement porte le comptage des auditeurs : il vit exactement aussi
-        // longtemps que le corps de la réponse, y compris si le client coupe net.
-        let chunks = ctx.hub.subscribe().map(Ok::<Bytes, Infallible>);
-
-        let response = Response::builder()
-            .status(StatusCode::OK)
-            .header("Content-Type", "audio/mpeg")
-            .header("Cache-Control", "no-store, no-cache, must-revalidate")
-            .header("Pragma", "no-cache")
-            .header("Accept-Ranges", "none")
-            .header("icy-name", "WebRadioCore")
-            .body(Body::wrap_stream(chunks))
-            .expect("réponse de flux mal formée");
-
-        Ok(response)
+        Ok(stream_response(&ctx.hub, "WebRadioCore", None))
     }
 
     /// État courant de la radio.
