@@ -2,6 +2,7 @@
 members = [
     "JanusCore",
     "PhonosCore",
+    "WebRadioCore",
     "janus_nucleus"
 ]
 resolver = "2"

@@ -6,17 +6,12 @@ version = 4
 name = "JanusCore"
 version = "0.1.0"
 dependencies = [
- "base64",
  "futures",
  "janus_nucleus",
- "rand",
- "reqwest",
  "rodio",
  "serde",
  "serde_json",
- "symphonia",
  "tokio",
- "walkdir",
  "warp",
  "winapi",
  "winres",
@@ -28,15 +23,30 @@ version = "0.1.0"
 dependencies = [
  "ebur128",
  "janus_nucleus",
- "rand",
  "reqwest",
  "rodio",
  "serde",
  "serde_json",
  "tokio",
- "walkdir",
  "warp",
  "widestring",
+ "winapi",
+ "winres",
+]
+
+[[package]]
+name = "WebRadioCore"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "janus_nucleus",
+ "rodio",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "warp",
  "winapi",
  "winres",
 ]
@@ -83,6 +93,15 @@ name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
+
+[[package]]
+name = "autotools"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef941527c41b0fc0dd48511a8154cd5fc7e29200a0ff8b7203c5d777dbc795cf"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "base64"
@@ -825,10 +844,18 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 name = "janus_nucleus"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "bytes",
  "ebur128",
+ "mp3lame-encoder",
+ "rand",
  "rodio",
  "serde",
  "serde_json",
+ "symphonia",
+ "tokio",
+ "tokio-stream",
+ "walkdir",
  "widestring",
  "winapi",
 ]
@@ -981,6 +1008,26 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mp3lame-encoder"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a3bb37607c4df224a0b7316897493fb49bd27312cb1b399fc4a43d2d7f2d3d8"
+dependencies = [
+ "mp3lame-sys",
+]
+
+[[package]]
+name = "mp3lame-sys"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54e3b1772db47828840702e5a2e05694527f731abadf9b931355d54035f019d8"
+dependencies = [
+ "autotools",
+ "cc",
+ "libc",
 ]
 
 [[package]]
@@ -1954,6 +2001,18 @@ checksum = "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2"
 dependencies = [
  "native-tls",
  "tokio",
+]
+
+[[package]]
+name = "tokio-stream"
+version = "0.1.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3d06f0b082ba57c26b79407372e57cf2a1e28124f78e9479fe80322cf53420b"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

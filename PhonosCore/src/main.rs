@@ -56,11 +56,7 @@ async fn main() {
     let routes = create_routes(player.clone(), music_port);
 
     // CORS restreint aux pages servies par praetorcast-core (cf. JanusCore).
-    let core_port = config.port.unwrap_or(3000);
-    let allowed_origins = [
-        format!("http://localhost:{}", core_port),
-        format!("http://127.0.0.1:{}", core_port),
-    ];
+    let allowed_origins = config.cors_origins();
     let cors = warp::cors()
         .allow_origins(allowed_origins.iter().map(String::as_str))
         .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])

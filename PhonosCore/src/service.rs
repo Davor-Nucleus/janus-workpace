@@ -9,17 +9,6 @@ impl PlayerService {
     }
 
     pub fn set_console_title() {
-        #[cfg(windows)]
-        {
-            use std::ffi::OsStr;
-            use std::iter::once;
-            use std::os::windows::ffi::OsStrExt;
-            use winapi::um::wincon::SetConsoleTitleW;
-            let title = "PhonosCore Server";
-            let wide: Vec<u16> = OsStr::new(title).encode_wide().chain(once(0)).collect();
-            unsafe {
-                SetConsoleTitleW(wide.as_ptr());
-            }
-        }
+        janus_nucleus::console::set_title("PhonosCore Server");
     }
 }

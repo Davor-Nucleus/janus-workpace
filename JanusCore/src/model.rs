@@ -5,27 +5,16 @@
 use janus_nucleus::audio::NormalizationManager;
 use janus_nucleus::config::update_config_key;
 use janus_nucleus::logger::{log_error, log_info};
-use rand::seq::SliceRandom;
+use janus_nucleus::music::{collect_tracks, list_folders, MUSIC_ROOT};
 use rodio::{Decoder, Sink};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use serde::{Deserialize, Serialize};
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::{MetadataOptions, StandardTagKey};
-use symphonia::core::probe::Hint;
+use serde::Deserialize;
 use std::{
     collections::VecDeque, fmt, fs::File, io::BufReader, path::Path, path::PathBuf, sync::Arc,
 };
 
-#[derive(Serialize)]
-pub struct MusicMetadata {
-    pub filename: String,
-    pub title: Option<String>,
-    pub artist: Option<String>,
-    pub album: Option<String>,
-    pub date: Option<String>,
-    pub cover_art: Option<String>,
-}
+/// Réexport : la lecture des tags vit dans `janus_nucleus` depuis que WebRadioCore
+/// en a besoin aussi.
+pub use janus_nucleus::metadata::MusicMetadata;
 
 #[derive(Deserialize)]
 /// JSON request body for updating the player volume.
@@ -223,31 +212,12 @@ impl PlayerState {
 
     /// Replace the queue with all audio files found under `folder`, shuffled.
     pub fn add_folder(&mut self, folder: &Path) {
-        // On liste les fichiers audio dans folder
-        let mut files: Vec<PathBuf> = walkdir::WalkDir::new(folder)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| {
-                if let Some(ext) = e.path().extension() {
-                    matches!(
-                        ext.to_str().unwrap_or("").to_lowercase().as_str(),
-                        "mp3" | "wav" | "flac"
-                    )
-                } else {
-                    false
-                }
-            })
-            .map(|e| e.into_path())
-            .collect();
+        let files = collect_tracks(folder);
 
         if files.is_empty() {
             log_info(format!("Aucun fichier audio trouvé dans {:?}", folder));
             return;
         }
-
-        // Mélanger la liste
-        files.shuffle(&mut rand::thread_rng());
 
         self.queue = VecDeque::from(files);
     }
@@ -274,92 +244,7 @@ impl PlayerState {
     /// Read and return ID3/Vorbis metadata from the current file.
     /// Falls back gracefully to filename-only if tags are absent or unreadable.
     pub fn get_current_music_metadata(&self) -> Option<MusicMetadata> {
-        let path = self.current_file.as_ref()?;
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
-
-        let mut meta = MusicMetadata {
-            filename,
-            title: None,
-            artist: None,
-            album: None,
-            date: None,
-            cover_art: None,
-        };
-
-        let file = match File::open(path) {
-            Ok(f) => f,
-            Err(_) => return Some(meta),
-        };
-
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
-        let mut hint = Hint::new();
-        if let Some(ext) = path.extension() {
-            hint.with_extension(&ext.to_string_lossy());
-        }
-
-        let mut probed = match symphonia::default::get_probe().format(
-            &hint,
-            mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        ) {
-            Ok(p) => p,
-            Err(_) => return Some(meta),
-        };
-
-        // probed.metadata   : Option<Metadata<'_>> → .current() → Option<&MetadataRevision>
-        // probed.format     : Metadata<'_>        → .current() → Option<&MetadataRevision>
-        // Les deux doivent être stockés en bindings pour que les lifetimes tiennent.
-
-        let probe_meta = probed.metadata.get();
-        let probe_rev = probe_meta.as_ref().and_then(|m| m.current());
-
-        let fmt_meta = probed.format.metadata();
-        let format_rev = fmt_meta.current();
-
-        for rev in [probe_rev, format_rev].into_iter().flatten() {
-            if meta.title.is_some() && meta.artist.is_some() && meta.cover_art.is_some() {
-                break;
-            }
-            Self::fill_from_revision(rev, &mut meta);
-        }
-
-        Some(meta)
-    }
-
-    fn fill_from_revision(
-        rev: &symphonia::core::meta::MetadataRevision,
-        meta: &mut MusicMetadata,
-    ) {
-        for tag in rev.tags() {
-            match tag.std_key {
-                Some(StandardTagKey::TrackTitle) => {
-                    meta.title.get_or_insert_with(|| tag.value.to_string());
-                }
-                Some(StandardTagKey::Artist) => {
-                    meta.artist.get_or_insert_with(|| tag.value.to_string());
-                }
-                Some(StandardTagKey::Album) => {
-                    meta.album.get_or_insert_with(|| tag.value.to_string());
-                }
-                Some(StandardTagKey::Date) => {
-                    meta.date.get_or_insert_with(|| tag.value.to_string());
-                }
-                _ => {}
-            }
-        }
-        if meta.cover_art.is_none() {
-            if let Some(visual) = rev.visuals().first() {
-                if let Some(mime) = sanitize_cover_mime(&visual.media_type) {
-                    let encoded = STANDARD.encode(&*visual.data);
-                    meta.cover_art = Some(format!("data:{};base64,{}", mime, encoded));
-                }
-            }
-        }
+        janus_nucleus::metadata::read_metadata(self.current_file.as_ref()?)
     }
 
     // Méthode pour jouer la piste précédente
@@ -444,103 +329,8 @@ impl PlayerState {
     }
 }
 
-/// Types d'images acceptés pour une pochette embarquée.
-const COVER_MIME_ALLOWLIST: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
-
-/// Valide le `media_type` d'une pochette embarquée avant de le coller dans une URL `data:`.
-///
-/// Ce champ vient du tag du fichier audio, donc d'une source non maîtrisée : un mp3
-/// récupéré ailleurs peut y placer n'importe quoi. Sans filtre, la chaîne ressortait
-/// telle quelle dans `data:{media_type};base64,...`, et un guillemet suffisait à sortir
-/// de l'attribut `src` côté overlay. La liste blanche est la première barrière ; la
-/// construction par API DOM dans `music_current.html` est la seconde.
-///
-/// Tolère les variantes de casse et les paramètres (`image/png; charset=binary`), et
-/// accepte les alias courants que produisent certains encodeurs.
-fn sanitize_cover_mime(media_type: &str) -> Option<&'static str> {
-    let base = media_type
-        .split(';')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase();
-
-    let normalized = match base.as_str() {
-        "image/jpg" | "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        other => other,
-    };
-
-    COVER_MIME_ALLOWLIST
-        .iter()
-        .find(|allowed| **allowed == normalized)
-        .copied()
-}
 
 /// Return the list of folders directly under `./public/music`.
 pub fn get_folders_list() -> Vec<String> {
-    let music_path = Path::new("./public/music");
-    let mut folders = Vec::new();
-    if music_path.exists() && music_path.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(music_path) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        folders.push(name.to_string());
-                    }
-                }
-            }
-        }
-    }
-    folders
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn accepte_les_types_usuels() {
-        assert_eq!(sanitize_cover_mime("image/png"), Some("image/png"));
-        assert_eq!(sanitize_cover_mime("image/jpeg"), Some("image/jpeg"));
-        assert_eq!(sanitize_cover_mime("image/gif"), Some("image/gif"));
-        assert_eq!(sanitize_cover_mime("image/webp"), Some("image/webp"));
-    }
-
-    #[test]
-    fn normalise_casse_alias_et_parametres() {
-        assert_eq!(sanitize_cover_mime("IMAGE/PNG"), Some("image/png"));
-        assert_eq!(sanitize_cover_mime("image/jpg"), Some("image/jpeg"));
-        assert_eq!(sanitize_cover_mime("  image/png  "), Some("image/png"));
-        assert_eq!(
-            sanitize_cover_mime("image/png; charset=binary"),
-            Some("image/png")
-        );
-    }
-
-    #[test]
-    fn refuse_une_sortie_d_attribut() {
-        // Le motif exact qui permettait d'echapper au src="" de l'overlay.
-        assert_eq!(
-            sanitize_cover_mime("image/png\" onerror=\"alert(1)"),
-            None
-        );
-        assert_eq!(sanitize_cover_mime("image/png'><script>"), None);
-    }
-
-    #[test]
-    fn refuse_les_types_hors_liste() {
-        assert_eq!(sanitize_cover_mime("text/html"), None);
-        assert_eq!(sanitize_cover_mime("image/svg+xml"), None); // SVG = script
-        assert_eq!(sanitize_cover_mime(""), None);
-    }
-
-    #[test]
-    fn la_valeur_retournee_ne_vient_jamais_de_l_entree() {
-        // La sortie est toujours un &'static str de la liste blanche : meme sur une
-        // entree valide, aucun octet de l'entree ne transite vers l'URL data:.
-        let sortie = sanitize_cover_mime("image/PNG; x=1").unwrap();
-        assert!(COVER_MIME_ALLOWLIST.contains(&sortie));
-    }
+    list_folders(MUSIC_ROOT)
 }

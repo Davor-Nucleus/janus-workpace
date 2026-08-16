@@ -26,6 +26,20 @@ impl NormalizationManager {
         Self::new(-14.0)
     }
 
+    /// Gain déjà connu pour ce fichier, sans jamais l'analyser.
+    ///
+    /// [`Self::get_or_compute_gain`] décode le fichier entier quand le cache est
+    /// froid, ce qui prend plusieurs secondes. Un lecteur local peut se le
+    /// permettre — la piste démarre simplement un peu plus tard — mais un flux
+    /// diffusé en direct ne le peut pas : le producteur doit rendre la main à
+    /// chaque bloc, sinon tous les auditeurs entendent un blanc. Cette variante
+    /// permet à l'appelant de constater l'absence de cache et de réagir
+    /// (jouer sans gain, lancer l'analyse en tâche de fond) plutôt que de bloquer.
+    pub fn cached_gain(&self, path: &Path) -> Option<f32> {
+        let key = path.to_string_lossy().to_string();
+        self.cache.lock().ok()?.get(&key).copied()
+    }
+
     /// Retrieve or compute normalization gain for a file.
     pub fn get_or_compute_gain(&self, path: &Path) -> f32 {
         let path_str = path.to_string_lossy().to_string();
