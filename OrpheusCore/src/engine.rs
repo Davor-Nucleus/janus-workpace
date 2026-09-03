@@ -5,13 +5,13 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use janus_nucleus::logger::log_info;
-use janus_nucleus::stream::{spawn_encode_loop, StreamHub, OUTPUT_SAMPLE_RATE};
+use janus_log_nucleus::log_info;
+use janus_stream_nucleus::{spawn_encode_loop, StreamHub, OUTPUT_SAMPLE_RATE};
 
 use crate::model::OrpheusState;
-use crate::render::Synth;
+use janus_synth_nucleus::render::Synth;
 
-/// Démarre le moteur : la boucle est celle de `janus_nucleus`, seule la synthèse
+/// Démarre le moteur : la boucle est celle de `janus_stream_nucleus`, seule la synthèse
 /// des blocs est propre au générateur.
 pub fn spawn(
     state: Arc<Mutex<OrpheusState>>,

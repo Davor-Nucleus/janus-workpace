@@ -6,7 +6,7 @@ use tokio_stream::StreamExt;
 use warp::http::{Response, StatusCode};
 use warp::hyper::Body;
 
-use crate::stream::StreamHub;
+use crate::StreamHub;
 
 /// Construit la réponse d'un flux sans fin.
 ///

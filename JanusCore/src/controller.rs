@@ -13,7 +13,7 @@ use warp::ws::Message;
 use warp::ws::Ws;
 use warp::{Rejection, Reply};
 
-use janus_nucleus::paths::resolve_within;
+use janus_platform_nucleus::paths::resolve_within;
 
 use crate::model::{NormalizationRequest, PlayerState, VolumeRequest, get_folders_list};
 
@@ -44,7 +44,7 @@ impl PlayerController {
             };
 
             let mut p = player.lock().unwrap();
-            p.add_folder(&folder_path);
+            p.playlist.load_folder(&folder_path);
             p.play_next();
 
             Ok(warp::reply::with_status(
@@ -250,7 +250,7 @@ impl PlayerController {
             loop {
                 let snapshot = {
                     let guard = player.lock().unwrap();
-                    let current_path = guard.current_file.clone();
+                    let current_path = guard.playlist.current_path();
 
                     if current_path != last_path {
                         cached_meta = match guard.get_current_music_metadata() {
@@ -260,15 +260,15 @@ impl PlayerController {
                         last_path = current_path;
                     }
 
-                    let has_next = !guard.queue.is_empty() || guard.current_file.is_some();
+                    let has_next = guard.playlist.has_next();
                     serde_json::json!({
-                        "queue_len": guard.queue.len(),
-                        "has_sink": guard.sink.is_some(),
+                        "queue_len": guard.playlist.queue_len(),
+                        "has_sink": guard.sink.has_track(),
                         "paused": guard.paused,
                         "volume": guard.volume,
                         "current_music": guard.get_current_music_name(),
                         "has_next": has_next,
-                        "history_len": guard.history.len(),
+                        "history_len": guard.playlist.history_len(),
                         "metadata": cached_meta,
                     })
                     .to_string()
@@ -346,7 +346,7 @@ impl PlayerController {
         let mut p = player.lock().unwrap();
 
         // Vérifier s'il y a une piste suivante dans la queue
-        if !p.queue.is_empty() {
+        if p.playlist.queue_len() > 0 {
             p.play_next();
             let music_name = p
                 .get_current_music_name()
@@ -388,11 +388,11 @@ impl PlayerController {
     ) -> Result<impl Reply, std::convert::Infallible> {
         let p = player.lock().unwrap();
 
-        let has_next = !p.queue.is_empty() || p.current_file.is_some();
+        let has_next = p.playlist.has_next();
 
         let response = serde_json::json!({
             "has_next": has_next,
-            "queue_length": p.queue.len(),
+            "queue_length": p.playlist.queue_len(),
             "current_music": p.get_current_music_name()
         });
 

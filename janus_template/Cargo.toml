@@ -1,0 +1,30 @@
+[package]
+name = "janus_template"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# GABARIT D'ENFANT — a copier pour demarrer un nouveau projet fille.
+#
+# Tout le travail de composition tient dans ce bloc : on liste les briques dont on
+# a besoin, et on ne compile rien d'autre. Il n'y a aucune feature a activer, donc
+# aucune interaction entre enfants : ce que declare celui-ci n'impose rien aux
+# autres.
+#
+# Ce gabarit prend cinq briques :
+[dependencies]
+janus_log_nucleus = { path = "../nucleus/janus_log_nucleus" }            # journalisation
+janus_config_nucleus = { path = "../nucleus/janus_config_nucleus" }      # env.json
+janus_platform_nucleus = { path = "../nucleus/janus_platform_nucleus" }  # titre de console
+janus_ui_nucleus = { path = "../nucleus/janus_ui_nucleus" }              # interface graphique
+janus_synth_nucleus = { path = "../nucleus/janus_synth_nucleus" }        # musique procedurale
+
+# Les quatre qu'il ne prend pas, et ce que les prendre couterait :
+#
+#   janus_logwindow_nucleus   fenetre de logs Win32   -> winapi (jeu complet)
+#   janus_stream_nucleus      flux MP3 sur HTTP       -> LAME, tokio, warp
+#   janus_library_nucleus     bibliotheque sur disque -> symphonia, rodio, ebur128
+#   janus_playlist_nucleus    lecture de dossiers     -> (via library)
+#
+# Verifier ce qu'un enfant tire reellement :
+#   cargo tree -p janus_template

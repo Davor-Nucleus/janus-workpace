@@ -1,4 +1,4 @@
-use crate::logger::{log_error, log_info};
+use janus_log_nucleus::{log_error, log_info};
 use ebur128::{EbuR128, Mode};
 use rodio::{Decoder, Source};
 use std::collections::HashMap;

@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use warp::http::StatusCode;
 use warp::Reply;
 
-use janus_nucleus::logger::log_info;
-use janus_nucleus::stream::{stream_response, StreamHub, OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE};
+use janus_log_nucleus::log_info;
+use janus_stream_nucleus::{stream_response, StreamHub, OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE};
 
 use crate::model::OrpheusState;
 
@@ -29,7 +29,7 @@ pub struct OrpheusController;
 
 impl OrpheusController {
     /// Le flux lui-même. Les en-têtes sont ceux de
-    /// [`janus_nucleus::stream::stream_response`], communs aux serveurs de flux.
+    /// [`janus_stream_nucleus::stream_response`], communs aux serveurs de flux.
     pub async fn handle_stream(ctx: Arc<OrpheusContext>) -> Result<impl Reply, Infallible> {
         Ok(stream_response(&ctx.hub, "OrpheusCore", Some("Synthwave")))
     }

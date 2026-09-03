@@ -1,0 +1,9 @@
+[package]
+name = "janus_log_nucleus"
+version = "0.1.0"
+edition = "2021"
+
+# Aucune dependance : c'est ce qui permet a tout enfant du kit de journaliser
+# sans rien tirer. Le pont vers la fenetre Win32 passe par un pointeur brut
+# depose par janus_logwindow_nucleus, pas par une dependance vers lui.
+[dependencies]

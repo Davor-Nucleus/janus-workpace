@@ -4,6 +4,8 @@ use rodio::OutputStream;
 use std::sync::{Arc, Mutex};
 use tokio;
 
+use janus_playlist_nucleus::TrackSink;
+
 use crate::model::PlayerState;
 
 /// Service layer encapsulating shared access to `PlayerState` and related tasks.
@@ -26,13 +28,11 @@ impl PlayerService {
                 {
                     let mut p = player_clone.lock().unwrap();
                     // S'il n'y a pas de musique en cours, jouer la suivante
-                    if p.sink.is_none() {
+                    if !p.sink.has_track() {
                         p.play_next();
-                    } else if let Some(sink) = &p.sink {
-                        // Si la musique est terminée
-                        if sink.empty() && !p.paused {
-                            p.play_next();
-                        }
+                    } else if p.sink.is_exhausted() && !p.paused {
+                        // La piste est arrivée à son terme
+                        p.play_next();
                     }
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -48,6 +48,6 @@ impl PlayerService {
 
     /// Set the console title on Windows.
     pub fn set_console_title() {
-        janus_nucleus::console::set_title("JanusCore Server");
+        janus_platform_nucleus::console::set_title("JanusCore Server");
     }
 }

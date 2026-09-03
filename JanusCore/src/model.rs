@@ -1,20 +1,25 @@
-//! Core data model and playback logic for the headless MP3 server.
-//! Exposes configuration types (`EnvConfig`, `VolumeRequest`) and the player state (`PlayerState`).
-//! Also provides helpers to read/write `env.json` and to discover music folders.
+//! État du lecteur : l'adaptateur carte son, autour du domaine partagé.
+//!
+//! L'ordre des pistes, l'historique et le rebouclage vivent dans
+//! [`janus_playlist_nucleus::Playlist`], commun avec la diffusion en flux. Ne
+//! restent ici que la sortie `rodio` et les trois réglages propres au serveur :
+//! volume (clé `VOLUME`), pause, normalisation.
 
-use janus_nucleus::audio::NormalizationManager;
-use janus_nucleus::config::update_config_key;
-use janus_nucleus::logger::{log_error, log_info};
-use janus_nucleus::music::{collect_tracks, list_folders, MUSIC_ROOT};
+use std::path::Path;
+use std::sync::Arc;
+use std::{fmt, fs::File, io::BufReader};
+
+use janus_config_nucleus::update_config_key;
+use janus_library_nucleus::audio::NormalizationManager;
+use janus_log_nucleus::{log_error, log_info};
+use janus_playlist_nucleus::{
+    next_playable, resolve_gain, warm_next, Playlist, TrackSink,
+};
 use rodio::{Decoder, Sink};
 use serde::Deserialize;
-use std::{
-    collections::VecDeque, fmt, fs::File, io::BufReader, path::Path, path::PathBuf, sync::Arc,
-};
 
-/// Réexport : la lecture des tags vit dans `janus_nucleus` depuis que WebRadioCore
-/// en a besoin aussi.
-pub use janus_nucleus::metadata::MusicMetadata;
+pub use janus_library_nucleus::metadata::MusicMetadata;
+pub use janus_playlist_nucleus::folders as get_folders_list;
 
 #[derive(Deserialize)]
 /// JSON request body for updating the player volume.
@@ -28,19 +33,117 @@ pub struct NormalizationRequest {
     pub enabled: bool,
 }
 
-/// Represents the current state of the player: queue, current track,
-/// volume and pause state, plus a bounded history to navigate backwards.
+/// La sortie de JanusCore : un `rodio::Sink` sur le périphérique par défaut.
+///
+/// Garde le gain de normalisation de la piste courante **à part** du volume.
+/// Les multiplier une fois pour toutes à l'ouverture était le défaut de la version
+/// précédente : régler le volume en cours de piste écrasait le produit et faisait
+/// disparaître la normalisation jusqu'au morceau suivant.
+pub struct RodioSink {
+    stream_handle: rodio::OutputStreamHandle,
+    sink: Option<Sink>,
+    /// Gain de normalisation de la piste en cours.
+    gain: f32,
+    volume: f32,
+}
 
+impl RodioSink {
+    pub fn new(stream_handle: rodio::OutputStreamHandle, volume: f32) -> Self {
+        Self {
+            stream_handle,
+            sink: None,
+            gain: 1.0,
+            volume,
+        }
+    }
+
+    pub fn set_volume(&mut self, volume: f32) {
+        self.volume = volume;
+        self.apply();
+    }
+
+    fn apply(&self) {
+        if let Some(sink) = &self.sink {
+            sink.set_volume(self.volume * self.gain);
+        }
+    }
+
+    pub fn pause(&self) {
+        if let Some(sink) = &self.sink {
+            sink.pause();
+        }
+    }
+
+    pub fn resume(&self) {
+        if let Some(sink) = &self.sink {
+            sink.play();
+        }
+    }
+
+    /// Une piste est-elle chargée ? Distinct de [`TrackSink::is_exhausted`], qui
+    /// est vrai aussi quand la piste est arrivée à son terme.
+    pub fn has_track(&self) -> bool {
+        self.sink.is_some()
+    }
+}
+
+impl TrackSink for RodioSink {
+    fn open(&mut self, path: &Path, gain: f32) -> bool {
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                log_error(format!("Impossible d'ouvrir le fichier {path:?} : {e}"));
+                return false;
+            }
+        };
+
+        let source = match Decoder::new(BufReader::new(file)) {
+            Ok(s) => s,
+            Err(e) => {
+                log_error(format!("Erreur décodage fichier {path:?} : {e}"));
+                return false;
+            }
+        };
+
+        let sink = match Sink::try_new(&self.stream_handle) {
+            Ok(s) => s,
+            Err(e) => {
+                log_error(format!("Erreur création Sink audio : {e}"));
+                return false;
+            }
+        };
+
+        log_info(format!(
+            "Lecture : {}",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        ));
+
+        sink.append(source);
+        self.gain = gain;
+        self.sink = Some(sink);
+        self.apply();
+        true
+    }
+
+    fn is_exhausted(&self) -> bool {
+        self.sink.as_ref().map_or(true, |s| s.empty())
+    }
+
+    fn clear(&mut self) {
+        if let Some(sink) = &self.sink {
+            sink.stop();
+        }
+        self.sink = None;
+        self.gain = 1.0;
+    }
+}
+
+/// État du lecteur : playlist partagée, sortie carte son, réglages locaux.
 pub struct PlayerState {
-    pub queue: VecDeque<PathBuf>,
-    pub sink: Option<Sink>,
-    pub stream_handle: rodio::OutputStreamHandle,
+    pub playlist: Playlist,
+    pub sink: RodioSink,
     pub paused: bool,
     pub volume: f32,
-    pub current_file: Option<PathBuf>,
-    // Historique des pistes jouées pour la navigation précédente
-    pub history: VecDeque<PathBuf>,
-    // Gestionnaire de normalisation partagé
     pub normalization_manager: Arc<NormalizationManager>,
     pub normalization_enabled: bool,
 }
@@ -48,153 +151,89 @@ pub struct PlayerState {
 impl fmt::Debug for PlayerState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PlayerState")
-            .field("queue_len", &self.queue.len())
-            .field("has_sink", &self.sink.is_some())
+            .field("queue_len", &self.playlist.queue_len())
+            .field("has_sink", &self.sink.has_track())
             .field("paused", &self.paused)
             .field("volume", &self.volume)
-            .field(
-                "current_file",
-                &self.current_file.as_ref().and_then(|p| {
-                    p.file_name()
-                        .and_then(|n| n.to_str().map(|s| s.to_string()))
-                }),
-            )
-            .field("history_len", &self.history.len())
+            .field("current_file", &self.playlist.current_music_name())
+            .field("history_len", &self.playlist.history_len())
             .field("normalization_enabled", &self.normalization_enabled)
             .finish()
     }
 }
 
 impl PlayerState {
-    /// Create a new player state with an initial volume and normalization flag.
     pub fn new(
         stream_handle: rodio::OutputStreamHandle,
         initial_volume: f32,
         initial_normalization_enabled: bool,
     ) -> Self {
         Self {
-            queue: VecDeque::new(),
-            sink: None,
-            stream_handle,
+            playlist: Playlist::new(),
+            sink: RodioSink::new(stream_handle, initial_volume),
             paused: false,
             volume: initial_volume,
-            current_file: None,
-            history: VecDeque::new(),
             normalization_manager: Arc::new(NormalizationManager::default()),
             normalization_enabled: initial_normalization_enabled,
         }
     }
 
-    /// Pause playback if there is an active sink/track.
     pub fn pause(&mut self) {
-        if let Some(sink) = &self.sink {
-            sink.pause();
+        if self.sink.has_track() {
+            self.sink.pause();
             self.paused = true;
         }
     }
 
-    /// Resume playback if it was previously paused.
     pub fn resume(&mut self) {
-        if let Some(sink) = &self.sink {
-            sink.play();
+        if self.sink.has_track() {
+            self.sink.resume();
             self.paused = false;
         }
     }
 
-    /// Play the next track in the queue. If the queue is empty but a current
-    /// track exists, rebuild the playlist from the parent folder and continue.
-    pub fn play_next(&mut self) {
-        if let Some(sink) = &self.sink {
-            sink.stop();
-        }
+    /// Ouvre la piste suivante. `false` quand il n'y a plus rien à jouer.
+    ///
+    /// Le plafond de tentatives vit dans [`next_playable`] : un dossier entièrement
+    /// corrompu rend la main au lieu de dérouler la pile, comme le faisait la
+    /// version récursive.
+    pub fn play_next(&mut self) -> bool {
+        let enabled = self.normalization_enabled;
+        let manager = Arc::clone(&self.normalization_manager);
 
-        // Ajouter la piste actuelle à l'historique avant de passer à la suivante
-        if let Some(current_file) = &self.current_file {
-            self.history.push_back(current_file.clone());
-        }
+        let Self { playlist, sink, .. } = self;
+        let opened = next_playable(
+            || playlist.next_track(),
+            sink,
+            |path| resolve_gain(path, enabled, &manager),
+        );
 
-        if let Some(next_file) = self.queue.pop_front() {
-            let file_name = next_file
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "Inconnu".to_string());
-
-            log_info(format!("Lecture : {}", file_name));
-
-            match File::open(&next_file) {
-                Ok(file) => {
-                    match Decoder::new(BufReader::new(file)) {
-                        Ok(source) => {
-                            match Sink::try_new(&self.stream_handle) {
-                                Ok(sink) => {
-                                    let normalization_gain = if self.normalization_enabled {
-                                        self.normalization_manager.get_or_compute_gain(&next_file)
-                                    } else {
-                                        1.0
-                                    };
-
-                                    sink.set_volume(self.volume * normalization_gain);
-
-                                    sink.append(source);
-                                    self.sink = Some(sink);
-                                    self.current_file = Some(next_file);
-                                }
-                                Err(e) => {
-                                    log_error(format!("Erreur création Sink audio : {}", e));
-                                    // On essaie de passer à la suivante si erreur technique ?
-                                    // Pour l'instant on s'arrête pour éviter une boucle rapide infinie
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log_error(format!("Erreur décodage fichier {:?} : {}", next_file, e));
-                            // Fichier corrompu, on passe au suivant
-                            self.play_next();
-                        }
-                    }
-                }
-                Err(e) => {
-                    log_error(format!(
-                        "Impossible d'ouvrir le fichier {:?} : {}",
-                        next_file, e
-                    ));
-                    // Fichier introuvable, on passe au suivant
-                    self.play_next();
-                }
-            }
+        if opened {
+            // Préchauffe la piste suivante pour que la transition soit normalisée.
+            warm_next(&manager, enabled, playlist.peek_next().map(|p| p.as_path()));
+            self.paused = false;
         } else {
-            // Si la playlist est vide, on la reconstitue avec les mêmes fichiers
-            if let Some(current_file) = &self.current_file {
-                log_info("Fin de playlist - rebouclage infini");
-                // On récupère le dossier parent du fichier actuel pour reconstituer la playlist
-                if let Some(parent) = current_file.parent() {
-                    // On clone le chemin pour éviter le conflit d'emprunt
-                    let parent_path = parent.to_path_buf();
-                    // On libère l'emprunt de current_file avant d'appeler add_folder
-                    let _ = current_file;
-                    self.add_folder(&parent_path);
-                    // On joue immédiatement la première musique de la nouvelle playlist
-                    self.play_next();
-                }
-            } else {
-                // println!("Playlist vide");
-                self.sink = None;
-                self.current_file = None;
-            }
+            self.sink.clear();
         }
+        opened
+    }
+
+    /// Revient à la piste précédente. `false` si l'historique est vide.
+    pub fn play_previous(&mut self) -> bool {
+        if !self.playlist.play_previous() {
+            log_info("Aucune piste précédente disponible".to_string());
+            return false;
+        }
+        self.play_next()
     }
 
     /// Update the in-memory volume and persist it to `env.json` (key `VOLUME`).
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume;
-        if let Some(sink) = &self.sink {
-            sink.set_volume(volume);
-        }
-        // Mettre à jour uniquement la clé VOLUME dans env.json
+        self.sink.set_volume(volume);
         if let Err(e) = update_config_key("VOLUME", serde_json::json!(volume)) {
             log_error(format!(
-                "Erreur lors de la mise à jour du volume dans env.json: {}",
-                e
+                "Erreur lors de la mise à jour du volume dans env.json: {e}"
             ));
         }
     }
@@ -204,133 +243,32 @@ impl PlayerState {
         self.normalization_enabled = enabled;
         if let Err(e) = update_config_key("normalizationEnabled", serde_json::json!(enabled)) {
             log_error(format!(
-                "Erreur lors de la mise à jour de la normalisation dans env.json: {}",
-                e
+                "Erreur lors de la mise à jour de la normalisation dans env.json: {e}"
             ));
         }
     }
 
-    /// Replace the queue with all audio files found under `folder`, shuffled.
-    pub fn add_folder(&mut self, folder: &Path) {
-        let files = collect_tracks(folder);
-
-        if files.is_empty() {
-            log_info(format!("Aucun fichier audio trouvé dans {:?}", folder));
-            return;
-        }
-
-        self.queue = VecDeque::from(files);
-    }
-
     /// Stop playback, clear the queue and reset the current track.
     pub fn stop(&mut self) {
-        if let Some(sink) = &self.sink {
-            sink.stop();
-        }
-        self.sink = None;
-        self.queue.clear();
-        self.current_file = None;
+        self.sink.clear();
+        self.playlist.clear();
+        self.paused = false;
     }
 
-    /// Return the file name of the current track, if any.
     pub fn get_current_music_name(&self) -> Option<String> {
-        self.current_file
-            .as_ref()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .map(|s| s.to_string())
+        self.playlist.current_music_name()
     }
 
     /// Read and return ID3/Vorbis metadata from the current file.
-    /// Falls back gracefully to filename-only if tags are absent or unreadable.
     pub fn get_current_music_metadata(&self) -> Option<MusicMetadata> {
-        janus_nucleus::metadata::read_metadata(self.current_file.as_ref()?)
+        janus_library_nucleus::metadata::read_metadata(&self.playlist.current_path()?)
     }
 
-    // Méthode pour jouer la piste précédente
-    /// Play the previous track using the history and push the current one
-    /// back to the front of the queue.
-    pub fn play_previous(&mut self) {
-        if let Some(sink) = &self.sink {
-            sink.stop();
-        }
-
-        // Retirer la piste actuelle de l'historique et la remettre dans la queue
-        if let Some(current_file) = &self.current_file {
-            self.queue.push_front(current_file.clone());
-        }
-
-        // Récupérer la piste précédente depuis l'historique
-        if let Some(previous_file) = self.history.pop_back() {
-            let file_name = previous_file
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "Inconnu".to_string());
-
-            log_info(format!("Lecture précédente : {}", file_name));
-
-            match File::open(&previous_file) {
-                Ok(file) => {
-                    match Decoder::new(BufReader::new(file)) {
-                        Ok(source) => match Sink::try_new(&self.stream_handle) {
-                            Ok(sink) => {
-                                let normalization_gain = if self.normalization_enabled {
-                                    self.normalization_manager
-                                        .get_or_compute_gain(&previous_file)
-                                } else {
-                                    1.0
-                                };
-
-                                sink.set_volume(self.volume * normalization_gain);
-
-                                sink.append(source);
-                                self.sink = Some(sink);
-                                self.current_file = Some(previous_file);
-                            }
-                            Err(e) => {
-                                log_error(format!("Erreur création Sink audio (prev) : {}", e));
-                            }
-                        },
-                        Err(e) => {
-                            log_error(format!(
-                                "Erreur décodage fichier {:?} : {}",
-                                previous_file, e
-                            ));
-                            // Si erreur, on tente encore la précédente ? Pour l'instant on stop.
-                        }
-                    }
-                }
-                Err(e) => {
-                    log_error(format!(
-                        "Impossible d'ouvrir le fichier {:?} : {}",
-                        previous_file, e
-                    ));
-                }
-            }
-        } else {
-            log_info("Aucune piste précédente disponible");
-        }
-    }
-
-    // Méthode pour vérifier s'il y a une piste précédente
-    /// Whether there is a previous track available in history.
     pub fn has_previous(&self) -> bool {
-        !self.history.is_empty()
+        self.playlist.has_previous()
     }
 
-    // Méthode pour obtenir le nom de la piste précédente
-    /// Return the file name of the previous track, if available.
     pub fn get_previous_music_name(&self) -> Option<String> {
-        self.history
-            .back()
-            .and_then(|path| path.file_name())
-            .and_then(|name| name.to_str())
-            .map(|s| s.to_string())
+        self.playlist.previous_music_name()
     }
-}
-
-
-/// Return the list of folders directly under `./public/music`.
-pub fn get_folders_list() -> Vec<String> {
-    list_folders(MUSIC_ROOT)
 }

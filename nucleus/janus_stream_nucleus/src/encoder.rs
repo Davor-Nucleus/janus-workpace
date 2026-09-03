@@ -115,7 +115,7 @@ impl Mp3Encoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stream::{CHUNK_FRAMES, CHUNK_SAMPLES, OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE};
+    use crate::{CHUNK_FRAMES, CHUNK_SAMPLES, OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE};
 
     #[test]
     fn choisit_le_debit_le_plus_proche() {

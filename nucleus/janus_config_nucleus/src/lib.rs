@@ -1,3 +1,10 @@
+//! Configuration partagée du kit : lecture d'`env.json`, origines CORS,
+//! adresse d'écoute, et écriture clé par clé.
+//!
+//! Toutes les briques et tous les enfants lisent le même fichier. L'écriture y est
+//! donc concurrente entre processus : voir [`update_config_key`], qui fusionne sur
+//! une relecture fraîche plutôt que de réécrire l'objet entier.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -141,7 +148,7 @@ pub fn parse_bind(setting: &str, key: &str) -> IpAddr {
     match setting.parse() {
         Ok(ip) => ip,
         Err(_) => {
-            crate::logger::log_error(format!(
+            janus_log_nucleus::log_error(format!(
                 "{key} « {setting} » illisible — repli sur 127.0.0.1"
             ));
             IpAddr::from([127, 0, 0, 1])
@@ -156,7 +163,7 @@ pub fn parse_bind(setting: &str, key: &str) -> IpAddr {
 /// enregistrer un volume n'empêche pas de l'appliquer.
 pub fn persist_key(key: &str, value: Value) {
     if let Err(e) = update_config_key(key, value) {
-        crate::logger::log_error(format!("Clé '{key}' non persistée dans env.json : {e}"));
+        janus_log_nucleus::log_error(format!("Clé '{key}' non persistée dans env.json : {e}"));
     }
 }
 
@@ -165,7 +172,7 @@ pub fn persist_key(key: &str, value: Value) {
 pub fn read_config() -> EnvConfig {
     let path = Path::new("env.json");
     if !path.exists() {
-        crate::logger::log_info("Configuration file 'env.json' not found. Using defaults.");
+        janus_log_nucleus::log_info("Configuration file 'env.json' not found. Using defaults.");
         return EnvConfig::default();
     }
 
@@ -173,7 +180,7 @@ pub fn read_config() -> EnvConfig {
         Ok(content) => match serde_json::from_str(&content) {
             Ok(config) => config,
             Err(e) => {
-                crate::logger::log_error(format!(
+                janus_log_nucleus::log_error(format!(
                     "Error parsing 'env.json': {}. Using defaults.",
                     e
                 ));
@@ -181,7 +188,7 @@ pub fn read_config() -> EnvConfig {
             }
         },
         Err(e) => {
-            crate::logger::log_error(format!("Error reading 'env.json': {}. Using defaults.", e));
+            janus_log_nucleus::log_error(format!("Error reading 'env.json': {}. Using defaults.", e));
             EnvConfig::default()
         }
     }

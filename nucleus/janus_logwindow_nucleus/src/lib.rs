@@ -12,7 +12,7 @@ use winapi::um::libloaderapi::GetModuleHandleW;
 use winapi::um::wingdi::{GetStockObject, WHITE_BRUSH};
 use winapi::um::winuser::*;
 
-use crate::logger::get_global_log_buffer_ptr;
+use janus_log_nucleus::get_global_log_buffer_ptr;
 
 pub struct LogWindowHandle;
 
@@ -33,7 +33,7 @@ impl LogWindowHandle {
         // maintenir l'`Arc` en vie de son côté. La fuite porte sur un seul buffer et
         // dure le temps du processus.
         let arc_ptr = Arc::into_raw(log_buffer);
-        crate::logger::set_global_log_buffer_ptr(arc_ptr);
+        janus_log_nucleus::set_global_log_buffer_ptr(arc_ptr);
 
         std::thread::spawn(move || {
             unsafe {

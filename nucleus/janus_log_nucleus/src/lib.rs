@@ -6,7 +6,7 @@ use std::sync::Mutex;
 // Buffer global partagé avec la fenêtre de logs Win32. Les tâches tokio et le thread
 // GUI y accèdent en parallèle : des `static mut` nus constituaient un accès concurrent
 // non synchronisé (comportement indéfini). Les primitives atomiques rendent l'accès
-// correct et permettront de passer janus_nucleus en edition 2024.
+// correct et permettront de passer cette brique en edition 2024.
 static LOG_BUFFER_PTR: AtomicPtr<Mutex<String>> = AtomicPtr::new(std::ptr::null_mut());
 static GUI_ENABLED: AtomicBool = AtomicBool::new(true);
 

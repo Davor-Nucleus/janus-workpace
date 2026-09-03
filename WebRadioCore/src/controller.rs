@@ -12,10 +12,10 @@ use warp::http::StatusCode;
 use warp::ws::{Message, Ws};
 use warp::{Rejection, Reply};
 
-use janus_nucleus::logger::log_info;
-use janus_nucleus::metadata::read_metadata;
-use janus_nucleus::paths::resolve_within;
-use janus_nucleus::stream::{stream_response, StreamHub};
+use janus_log_nucleus::log_info;
+use janus_library_nucleus::metadata::read_metadata;
+use janus_platform_nucleus::paths::resolve_within;
+use janus_stream_nucleus::{stream_response, StreamHub};
 
 use crate::model::{get_folders_list, RadioState, MUSIC_ROOT};
 
@@ -39,7 +39,7 @@ pub struct RadioContext {
 /// verrou en main le ferait attendre, et le blanc s'entendrait chez tous les
 /// auditeurs à la fois. On prend donc le verrou juste le temps de copier le chemin.
 fn current_metadata(state: &Mutex<RadioState>) -> Option<serde_json::Value> {
-    let path: Option<PathBuf> = state.lock().unwrap().current_path();
+    let path: Option<PathBuf> = state.lock().unwrap().playlist().current_path();
     let meta = read_metadata(&path?)?;
     serde_json::to_value(&meta).ok()
 }
@@ -48,7 +48,7 @@ pub struct RadioController;
 
 impl RadioController {
     /// Le flux lui-même. Les en-têtes sont ceux de
-    /// [`janus_nucleus::stream::stream_response`], communs aux serveurs de flux.
+    /// [`janus_stream_nucleus::stream_response`], communs aux serveurs de flux.
     pub async fn handle_stream(ctx: Arc<RadioContext>) -> Result<impl Reply, Infallible> {
         Ok(stream_response(&ctx.hub, "WebRadioCore", None))
     }
@@ -58,12 +58,12 @@ impl RadioController {
         let (current_music, volume, queue_len, paused, has_next, has_previous) = {
             let s = ctx.state.lock().unwrap();
             (
-                s.current_music_name(),
+                s.playlist().current_music_name(),
                 s.volume(),
-                s.queue_len(),
+                s.playlist().queue_len(),
                 s.is_paused(),
-                s.has_next(),
-                s.has_previous(),
+                s.playlist().has_next(),
+                s.playlist().has_previous(),
             )
         };
 
@@ -97,9 +97,9 @@ impl RadioController {
     pub async fn handle_next(ctx: Arc<RadioContext>) -> Result<impl Reply, Infallible> {
         let has_next = {
             let mut s = ctx.state.lock().unwrap();
-            let has_next = s.has_next();
+            let has_next = s.playlist().has_next();
             if has_next {
-                s.skip_next();
+                s.playlist_mut().skip_next();
             }
             has_next
         };
@@ -123,8 +123,8 @@ impl RadioController {
     pub async fn handle_previous(ctx: Arc<RadioContext>) -> Result<impl Reply, Infallible> {
         let (ok, name) = {
             let mut s = ctx.state.lock().unwrap();
-            let name = s.previous_music_name();
-            (s.play_previous(), name)
+            let name = s.playlist().previous_music_name();
+            (s.playlist_mut().play_previous(), name)
         };
 
         if !ok {
@@ -143,12 +143,12 @@ impl RadioController {
     }
 
     pub async fn handle_has_next(ctx: Arc<RadioContext>) -> Result<impl Reply, Infallible> {
-        let has_next = ctx.state.lock().unwrap().has_next();
+        let has_next = ctx.state.lock().unwrap().playlist().has_next();
         Ok(warp::reply::json(&has_next))
     }
 
     pub async fn handle_has_previous(ctx: Arc<RadioContext>) -> Result<impl Reply, Infallible> {
-        let has_previous = ctx.state.lock().unwrap().has_previous();
+        let has_previous = ctx.state.lock().unwrap().playlist().has_previous();
         Ok(warp::reply::json(&has_previous))
     }
 
@@ -216,7 +216,7 @@ impl RadioController {
             loop {
                 // Deux prises de verrou courtes, jamais pendant la lecture du
                 // fichier : la sonde symphonia se fait entre les deux.
-                let path = ctx.state.lock().unwrap().current_path();
+                let path = ctx.state.lock().unwrap().playlist().current_path();
                 if path != cached_path {
                     cached_meta = path
                         .as_deref()
@@ -229,13 +229,13 @@ impl RadioController {
                 let snapshot = {
                     let s = ctx.state.lock().unwrap();
                     serde_json::json!({
-                        "queue_len": s.queue_len(),
+                        "queue_len": s.playlist().queue_len(),
                         "paused": s.is_paused(),
                         "volume": s.volume(),
-                        "current_music": s.current_music_name(),
-                        "has_next": s.has_next(),
-                        "has_previous": s.has_previous(),
-                        "history_len": s.history_len(),
+                        "current_music": s.playlist().current_music_name(),
+                        "has_next": s.playlist().has_next(),
+                        "has_previous": s.playlist().has_previous(),
+                        "history_len": s.playlist().history_len(),
                         "listeners": ctx.hub.listener_count(),
                         "metadata": cached_meta,
                     })
@@ -294,7 +294,7 @@ impl RadioController {
             ));
         };
 
-        let tracks = ctx.state.lock().unwrap().load_folder(&folder_path);
+        let tracks = ctx.state.lock().unwrap().playlist_mut().load_folder(&folder_path);
         if tracks == 0 {
             return Ok(warp::reply::with_status(
                 warp::reply::json(&serde_json::json!({ "error": "Aucun fichier audio jouable" })),

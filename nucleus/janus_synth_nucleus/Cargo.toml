@@ -1,0 +1,13 @@
+[package]
+name = "janus_synth_nucleus"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rand = "0.8"
+
+# Le test de rendu rejoue le decoupage en blocs du moteur pour eprouver le meme
+# chemin de code : il emprunte CHUNK_SAMPLES au lieu de recopier la valeur, qui
+# divergerait. Dependance de test uniquement, invisible pour les consommateurs.
+[dev-dependencies]
+janus_stream_nucleus = { path = "../janus_stream_nucleus" }

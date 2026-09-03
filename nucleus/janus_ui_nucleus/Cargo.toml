@@ -1,0 +1,15 @@
+[package]
+name = "janus_ui_nucleus"
+version = "0.1.0"
+edition = "2021"
+
+# Capacite « interface graphique » : un panneau de controle natif, distinct de la
+# fenetre de logs (janus_logwindow_nucleus), qui ne fait qu'afficher du texte.
+#
+# Seule brique a tirer eframe. Un enfant pilote depuis un navigateur -- comme les
+# quatre serveurs actuels, pilotes par praetorcast-core -- ne la declare pas.
+[dependencies]
+eframe = "0.33.3"
+
+[[example]]
+name = "panel"

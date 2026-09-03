@@ -11,13 +11,21 @@
 
 ---
 
-Ce workspace Cargo contient l'infrastructure audio pour le système de contrôle de stream. Il est composé de cinq membres :
+Ce workspace Cargo est un **kit de briques composables** pour bâtir des serveurs audio.
+Neuf bibliothèques, chacune une capacité, et des enfants qui piochent dedans.
+
+Les enfants livrés :
 
 1. 🎵 **JanusCore** : Le serveur de lecture de musique (MP3/FLAC/WAV/AAC/MP4) avec normalisation EBU R128.
-2. 🔊 **PhonosCore** : Le serveur de soundboard (effets sonores, sans normalisation automatique). 
+2. 🔊 **PhonosCore** : Le serveur de soundboard (effets sonores, sans normalisation automatique).
 3. 📻 **WebRadioCore** : La webradio — diffuse la musique en MP3 sur HTTP, pour l'écouter depuis un autre appareil du réseau.
 4. 🎹 **OrpheusCore** : Le générateur — **synthétise** de la synthwave en continu et la diffuse en MP3. Aucun fichier audio.
-5. ⚙️ **janus_nucleus** : Une bibliothèque partagée contenant la logique de configuration, de journalisation (logs), d'interface graphique (GUI), de diffusion audio et de lecture des métadonnées.
+5. 🧩 **janus_template** : Le gabarit à copier pour démarrer un nouvel enfant.
+
+Les briques `janus_*_nucleus` — journalisation, configuration, plateforme, fenêtre de logs,
+interface graphique, flux MP3, bibliothèque musicale, domaine de lecture, synthèse — sont
+décrites dans [Architecture](#-architecture). **Aucune n'est une feature** : un enfant les
+déclare comme dépendances, et ne compile que celles qu'il déclare.
 
 > [!NOTE]
 > JanusCore et PhonosCore jouent sur **la carte son du PC**. WebRadioCore et OrpheusCore n'ouvrent aucun
@@ -40,8 +48,8 @@ Ce workspace Cargo contient l'infrastructure audio pour le système de contrôle
 - **API REST complète** — lecture, volume, état et normalisation exposés en HTTP.
 - **WebSocket temps réel** — flux de l'état du lecteur pour les overlays OBS.
 - **Volume persistant** — sauvegardé dans `env.json` et réappliqué au démarrage.
-- **Fenêtre de logs Windows** — GUI Win32 optionnelle affichant les logs en temps réel.
-- **CORS ouvert** — appels directs depuis n'importe quel frontend web.
+- **Fenêtre de logs Windows** — GUI Win32 optionnelle affichant les logs en temps réel, et panneau de contrôle egui pour les enfants qui en veulent un.
+- **CORS restreint** — seules les origines de `praetorcast-core` sont acceptées, politique mutualisée dans une brique unique.
 
 ## 📋 Sommaire
 
@@ -70,28 +78,55 @@ Ce workspace Cargo contient l'infrastructure audio pour le système de contrôle
 
 ```text
 janus core/
-├── JanusCore/           # Serveur Musique
-│   ├── src/             # Code source
-│   ├── public/music/    # Dossiers de musique
-│   └── env.json         # Configuration JanusCore
-├── PhonosCore/          # Serveur Soundboard
-│   ├── src/             # Code source
-│   ├── public/soundboard/ # Fichiers audio
-│   └── env.json         # Configuration PhonosCore
-├── WebRadioCore/        # Serveur Webradio (diffusion HTTP)
-│   ├── src/             # Code source
-│   ├── public/music/    # Dossiers de musique
-│   └── env.json         # Configuration WebRadioCore
-├── OrpheusCore/         # Generateur Synthwave (aucun fichier audio)
-│   ├── src/synth/       # Oscillateurs, enveloppes, filtres, batterie, effets
-│   ├── src/compose/     # Theorie musicale et arrangement
-│   └── env.json         # Configuration OrpheusCore
-├── janus_nucleus/       # Lib partagée (Config, Logger, GUI, Stream)
-│   └── src/             # Code source commun
-├── Cargo.toml           # Configuration workspace
+│
+├── nucleus/                      # LES BRIQUES (lib) : 1 capacité = 1 crate, 0 feature
+│   ├── janus_log_nucleus/        #   Journalisation          (aucune dépendance)
+│   ├── janus_config_nucleus/     #   env.json, CORS, adresse d'écoute
+│   ├── janus_platform_nucleus/   #   Titre de console, confinement des chemins
+│   ├── janus_logwindow_nucleus/  #   Fenêtre de logs Win32
+│   ├── janus_ui_nucleus/         #   Panneau de contrôle egui
+│   ├── janus_stream_nucleus/     #   Flux MP3 continu sur HTTP (LAME)
+│   ├── janus_library_nucleus/    #   Playlists, tags, normalisation EBU R128
+│   ├── janus_playlist_nucleus/   #   Domaine de lecture + port TrackSink
+│   └── janus_synth_nucleus/      #   Musique procédurale (compose/ + synth/)
+│
+│  ── Les enfants (bin) : ils composent les briques ──
+├── JanusCore/           # Serveur Musique          → carte son
+├── PhonosCore/          # Serveur Soundboard       → carte son
+├── WebRadioCore/        # Serveur Webradio         → HTTP
+├── OrpheusCore/         # Générateur Synthwave     → HTTP
+├── janus_template/      # Gabarit à copier pour un nouvel enfant
+│
+├── Cargo.toml           # Workspace
 └── Cargo.lock           # Verrouillage des dépendances
 ```
 </details>
+
+Le dossier `nucleus/` sépare visuellement ce qui est réutilisable de ce qui est livré.
+Les briques s'y référencent entre elles en voisines (`path = "../janus_log_nucleus"`) ;
+un enfant, lui, remonte d'un cran : `path = "../nucleus/janus_log_nucleus"`.
+
+### Composer un enfant
+
+Il n'y a **aucune feature à activer** : un enfant déclare les briques dont il a
+besoin, et ne compile rien d'autre. Ce que déclare l'un n'impose rien aux autres.
+
+| | log | config | platform | logwindow | ui | stream | library | playlist | synth |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| JanusCore | ● | ● | ● | ● | | | ● | ● | |
+| PhonosCore | ● | ● | ● | ● | | | ● | | |
+| WebRadioCore | ● | ● | ● | ● | | ● | ● | ● | |
+| OrpheusCore | ● | ● | ● | ● | | ● | | | ● |
+| janus_template | ● | ● | ● | | ● | | | | ● |
+
+Chaque nom se lit `janus_<colonne>_nucleus`.
+
+Pour démarrer : copier `janus_template/`, ajuster ses dépendances, l'ajouter aux
+`members` du workspace. Puis vérifier ce qu'il tire réellement :
+
+```bash
+cargo tree -p mon_enfant --depth 1
+```
 
 ---
 
@@ -399,58 +434,76 @@ cargo check --workspace
 - **Tokio** : Runtime asynchrone pour Rust
 - **Serde/Serde JSON** : Sérialisation/désérialisation JSON
 
-### Les features de janus_nucleus
+### Pourquoi des crates et non des features
 
-Quatre modules optionnels, activés à la demande par les binaires qui en ont besoin :
+Le kit reposait auparavant sur un crate unique, `janus_nucleus`, avec quatre features
+optionnelles. Ça ne tient pas dès qu'on ajoute des enfants, pour deux raisons :
 
-| Feature | Contenu | Utilisée par |
+1. **Cargo unifie les features d'un crate.** `cargo build --workspace` activait `stream`
+   pour tout le monde : LAME était compilé même pour un binaire qui n'en voulait pas.
+   Chaque enfant ajouté élargissait l'union.
+2. **Les dépendances lourdes n'étaient pas gatées du tout.** `rodio`, `ebur128`, `winapi`
+   et `widestring` étaient inconditionnelles — OrpheusCore compilait rodio et ebur128
+   sans jamais les appeler.
+
+Un crate absent, lui, est un crate non compilé. C'est vérifiable :
+
+```bash
+cargo tree -p OrpheusCore | grep -E 'rodio|ebur128|symphonia|walkdir'   # vide
+cargo tree -p JanusCore   | grep mp3lame                                # vide
+cargo tree -p janus_template --depth 1                                  # 5 briques, rien d'autre
+```
+
+**Règle de granularité : une empreinte de dépendances = un crate**, et non « un module =
+un crate ». C'est pourquoi `console` et `paths` cohabitent dans `janus_platform_nucleus` :
+le premier tire `winapi/wincon`, le second rien du tout, donc les regrouper ne fait payer
+personne.
+
+### Le port de sortie de la lecture
+
+`janus_playlist_nucleus` tient l'ordre des pistes, l'historique, le rebouclage et la
+tolérance aux fichiers illisibles — **sans aucune dépendance externe**. La sortie est
+fournie par l'enfant via le trait `TrackSink` :
+
+| Enfant | Adaptateur | `is_exhausted()` |
 |---|---|---|
-| `stream` | Cadenceur horloge, encodeur MP3 (LAME), diffusion un-vers-N, boucle de production | WebRadioCore, OrpheusCore |
-| `http` | Réponse HTTP d'un flux continu (implique `stream`, tire `warp`) | WebRadioCore, OrpheusCore |
-| `metadata` | Tags ID3/Vorbis, pochette base64, validation du MIME de pochette | JanusCore, WebRadioCore |
-| `music` | Découverte des playlists : listage des dossiers, collecte récursive et mélange des pistes | JanusCore, WebRadioCore |
+| JanusCore | `RodioSink` | `sink.empty()` |
+| WebRadioCore | `StreamTrack` | itérateur épuisé |
 
-Les modules **toujours disponibles** sont `config` (politique d'origines CORS, analyse d'adresse d'écoute,
-persistance de clés), `logger`, `paths` (garde anti-traversée), `audio` (normalisation EBU R128), `console`
-(titre de la fenêtre) et, sous Windows, `gui`.
+Le port est au niveau **piste**, pas échantillon : les deux cadences sont incompatibles
+(la carte son tire seule, le `Pacer` pousse par blocs de 192 ms), mais toutes deux
+posent la même question — « quelle piste ensuite, et que faire si elle est illisible ».
 
 Trois briques ont été mutualisées parce que leur divergence coûterait cher :
 
-- **`stream::http::stream_response`** — les en-têtes d'un flux sans fin. Ajouter un `Content-Length`, même
-  « pour bien faire », le casse : c'est son absence qui fait basculer hyper en `Transfer-Encoding: chunked`.
-- **`config::parse_bind`** — une adresse illisible se replie sur `127.0.0.1`, **jamais** sur `0.0.0.0`. Une
-  coquille dans `env.json` doit fermer le serveur, pas l'ouvrir au réseau.
-- **`stream::spawn_encode_loop`** — la boucle produire → encoder → publier → cadencer. Les deux serveurs de
-  flux ne diffèrent que par le remplissage d'un bloc de PCM ; tout le reste leur est commun.
+- **`janus_stream_nucleus::stream_response`** — les en-têtes d'un flux sans fin. Ajouter un `Content-Length`,
+  même « pour bien faire », le casse : c'est son absence qui fait basculer hyper en `Transfer-Encoding: chunked`.
+- **`janus_config_nucleus::parse_bind`** — une adresse illisible se replie sur `127.0.0.1`, **jamais** sur
+  `0.0.0.0`. Une coquille dans `env.json` doit fermer le serveur, pas l'ouvrir au réseau.
+- **`janus_stream_nucleus::spawn_encode_loop`** — la boucle produire → encoder → publier → cadencer. Les deux
+  serveurs de flux ne diffèrent que par le remplissage d'un bloc de PCM ; tout le reste leur est commun.
 
-`stream` est isolée derrière une feature pour que JanusCore et PhonosCore n'aient pas à compiler LAME
-depuis ses sources C :
+`janus_library_nucleus::metadata` est partagée plutôt que dupliquée parce qu'elle contient
+`sanitize_cover_mime`, un **contrôle de sécurité** : il empêche un `media_type` forgé dans un tag de
+s'échapper de l'attribut `src` d'un overlay. Une seconde copie finirait tôt ou tard par diverger.
 
-```bash
-cd JanusCore && cargo build          # sans LAME
-cd WebRadioCore && cargo build       # avec LAME
-cargo build --workspace              # LAME compilé une fois (les features sont unifiées)
-```
+### Le profil de compilation du synthé
 
-`metadata` est partagée plutôt que dupliquée parce qu'elle contient `sanitize_cover_mime`, un **contrôle de
-sécurité** : il empêche un `media_type` forgé dans un tag de s'échapper de l'attribut `src` d'un overlay.
-Une seconde copie de ce contrôle finirait tôt ou tard par diverger de la première.
-
-### Le profil de compilation d'OrpheusCore
-
-La racine du workspace force `opt-level = 2` sur OrpheusCore, y compris en debug :
+La racine du workspace force `opt-level = 2` sur `janus_synth_nucleus`, y compris en debug :
 
 ```toml
-[profile.dev.package.OrpheusCore]
+[profile.dev.package.janus_synth_nucleus]
 opt-level = 2
 ```
 
-Sa synthèse travaille échantillon par échantillon — environ 96 000 passages de boucle par seconde d'audio.
-Non optimisée, elle n'atteint pas le temps réel et le flux hacherait. Les autres crates n'en ont pas besoin :
-elles ne font que décoder.
+La synthèse travaille échantillon par échantillon — environ 96 000 passages de boucle par seconde d'audio.
+Non optimisée, elle n'atteint pas le temps réel et le flux hacherait. Le profil suit le DSP : il porte sur la
+brique, donc tout enfant qui prend `janus_synth_nucleus` en bénéficie sans avoir à le déclarer.
 
 ### CORS
-Les deux serveurs ont le support CORS activé pour permettre les requêtes depuis des applications web frontend.
+Les serveurs restreignent les origines à celles de `praetorcast-core`, via
+`janus_config_nucleus::cors_origins`. Mutualisé parce que c'est une **politique de sécurité** : les serveurs
+doivent la resserrer ou l'élargir ensemble, et trois copies finiraient par en corriger deux.
 
 ---
 

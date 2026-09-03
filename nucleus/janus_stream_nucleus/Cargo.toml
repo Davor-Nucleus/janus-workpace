@@ -1,0 +1,21 @@
+[package]
+name = "janus_stream_nucleus"
+version = "0.1.0"
+edition = "2021"
+
+# Capacite « URL continue de musique ». LAME se compile depuis ses sources C :
+# c'est le cout que les enfants sans flux n'ont plus a payer depuis que cette
+# brique est un crate a part, et non une feature de janus_nucleus.
+[dependencies]
+mp3lame-encoder = "0.2"
+tokio = { version = "1", features = ["sync"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+bytes = "1"
+warp = "0.3"
+janus_log_nucleus = { path = "../janus_log_nucleus" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "time"] }
+# Le test de l'encodeur redecode le MP3 produit pour verifier qu'il est lisible.
+# Dependance de test uniquement : la brique de diffusion elle-meme ne decode rien.
+rodio = "0.17"

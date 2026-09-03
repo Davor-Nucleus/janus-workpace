@@ -5,23 +5,20 @@
 //! périphérique de sortie — le `Pacer` remplace la carte son pour cadencer la
 //! production.
 
-mod compose;
 mod controller;
 mod engine;
 mod model;
-mod render;
 mod routes;
-mod synth;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use warp::Filter;
 
-use janus_nucleus::config::{parse_bind, read_config};
-use janus_nucleus::logger::{log_error, log_info, set_gui_enabled};
-use janus_nucleus::stream::{StreamHub, DEFAULT_LEAD};
+use janus_config_nucleus::{parse_bind, read_config};
+use janus_log_nucleus::{log_error, log_info, set_gui_enabled};
+use janus_stream_nucleus::{StreamHub, DEFAULT_LEAD};
 
-use crate::compose::arranger::Arranger;
+use janus_synth_nucleus::compose::arranger::Arranger;
 use crate::controller::OrpheusContext;
 use crate::model::OrpheusState;
 use crate::routes::create_routes;
@@ -49,12 +46,12 @@ async fn main() {
     let bind_ip = parse_bind(&bind_setting, "orpheusBind");
 
     set_gui_enabled(gui_enabled);
-    janus_nucleus::console::set_title("OrpheusCore Server");
+    janus_platform_nucleus::console::set_title("OrpheusCore Server");
 
     let (close_tx, close_rx) = std::sync::mpsc::channel::<()>();
     if gui_enabled {
         let log_buffer: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-        janus_nucleus::gui::LogWindowHandle::spawn(
+        janus_logwindow_nucleus::LogWindowHandle::spawn(
             log_buffer,
             close_tx,
             "OrpheusCore - Logs".to_string(),
@@ -65,7 +62,7 @@ async fn main() {
     // Un arrangeur jetable, uniquement pour disposer d'un instantané cohérent avant
     // que le moteur n'ait produit son premier bloc.
     let snapshot = Arranger::new(
-        janus_nucleus::stream::OUTPUT_SAMPLE_RATE as f32,
+        janus_stream_nucleus::OUTPUT_SAMPLE_RATE as f32,
         base_bpm,
         seed,
     )

@@ -1,0 +1,13 @@
+[package]
+name = "janus_playlist_nucleus"
+version = "0.1.0"
+edition = "2021"
+
+# Capacite « lecture de dossiers de musique en aleatoire ».
+#
+# Aucune dependance externe : le domaine ignore rodio, LAME et warp. C'est ce qui
+# permet de le tester sans carte son ni reseau, et c'est le signe que le port est
+# au bon endroit -- la sortie est fournie par l'enfant, pas par la brique.
+[dependencies]
+janus_library_nucleus = { path = "../janus_library_nucleus" }
+janus_log_nucleus = { path = "../janus_log_nucleus" }

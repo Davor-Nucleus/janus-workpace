@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crate::logger::{log_error, log_info};
-use crate::stream::{
+use janus_log_nucleus::{log_error, log_info};
+use crate::{
     Mp3Encoder, Pacer, StreamHub, CHUNK_FRAMES, CHUNK_SAMPLES, OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE,
 };
 

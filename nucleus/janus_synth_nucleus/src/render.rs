@@ -148,7 +148,7 @@ impl Synth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use janus_nucleus::stream::{CHUNK_SAMPLES, OUTPUT_SAMPLE_RATE};
+    use janus_stream_nucleus::{CHUNK_SAMPLES, OUTPUT_SAMPLE_RATE};
     use std::time::Instant;
 
     const FS: f32 = OUTPUT_SAMPLE_RATE as f32;

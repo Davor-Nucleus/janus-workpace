@@ -1,15 +1,26 @@
 [workspace]
 members = [
+    "nucleus/janus_log_nucleus",
+    "nucleus/janus_config_nucleus",
+    "nucleus/janus_platform_nucleus",
+    "nucleus/janus_logwindow_nucleus",
+    "nucleus/janus_library_nucleus",
+    "nucleus/janus_stream_nucleus",
+    "nucleus/janus_synth_nucleus",
+    "nucleus/janus_playlist_nucleus",
+    "nucleus/janus_ui_nucleus",
+
+    "janus_template",
+
     "JanusCore",
     "OrpheusCore",
     "PhonosCore",
-    "WebRadioCore",
-    "janus_nucleus"
+    "WebRadioCore"
 ]
 resolver = "2"
 
-# Le DSP d'OrpheusCore travaille échantillon par échantillon : en debug non
+# Le DSP de janus_synth_nucleus travaille échantillon par échantillon : en debug non
 # optimisé il n'atteint pas le temps réel, et le flux hacherait. Les autres crates
 # restent en debug pur, eux ne font que décoder.
-[profile.dev.package.OrpheusCore]
+[profile.dev.package.janus_synth_nucleus]
 opt-level = 2

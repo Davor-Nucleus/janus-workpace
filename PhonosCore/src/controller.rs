@@ -11,8 +11,8 @@ use std::{
 use warp::Reply;
 
 use crate::model::PlayerState;
-use janus_nucleus::logger::{log_error, log_info};
-use janus_nucleus::paths::resolve_within;
+use janus_log_nucleus::{log_error, log_info};
+use janus_platform_nucleus::paths::resolve_within;
 
 pub struct PlayerController;
 

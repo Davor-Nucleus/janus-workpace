@@ -10,8 +10,12 @@ warp = "0.3"
 tokio = { version = "1", features = ["full"] }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
-rand = "0.8"
-janus_nucleus = { path = "../janus_nucleus", features = ["stream", "http"] }
+janus_log_nucleus = { path = "../nucleus/janus_log_nucleus" }
+janus_config_nucleus = { path = "../nucleus/janus_config_nucleus" }
+janus_platform_nucleus = { path = "../nucleus/janus_platform_nucleus" }
+janus_logwindow_nucleus = { path = "../nucleus/janus_logwindow_nucleus" }
+janus_stream_nucleus = { path = "../nucleus/janus_stream_nucleus" }
+janus_synth_nucleus = { path = "../nucleus/janus_synth_nucleus" }
 
 [build-dependencies]
 winres = "0.1"

@@ -1,0 +1,14 @@
+[package]
+name = "janus_library_nucleus"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+walkdir = "2.4"
+rand = "0.8"
+symphonia = { version = "0.5", features = ["mp3", "wav", "flac", "aac", "isomp4"] }
+base64 = "0.21"
+serde = { version = "1.0", features = ["derive"] }
+ebur128 = "0.1"
+rodio = "0.17"
+janus_log_nucleus = { path = "../janus_log_nucleus" }

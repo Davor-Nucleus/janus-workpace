@@ -9,6 +9,6 @@ impl PlayerService {
     }
 
     pub fn set_console_title() {
-        janus_nucleus::console::set_title("PhonosCore Server");
+        janus_platform_nucleus::console::set_title("PhonosCore Server");
     }
 }

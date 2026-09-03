@@ -25,7 +25,7 @@ mod tests {
     use std::fs;
 
     fn fixture() -> PathBuf {
-        let dir = std::env::temp_dir().join("janus_nucleus_paths_test");
+        let dir = std::env::temp_dir().join("janus_platform_nucleus_paths_test");
         fs::create_dir_all(dir.join("musique")).unwrap();
         fs::write(dir.join("musique").join("a.mp3"), b"x").unwrap();
         fs::write(dir.join("secret.txt"), b"x").unwrap();

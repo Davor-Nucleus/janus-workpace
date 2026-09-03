@@ -1,0 +1,10 @@
+[package]
+name = "janus_platform_nucleus"
+version = "0.1.0"
+edition = "2021"
+
+# `wincon` seul : le titre de console est la seule chose que cette brique
+# demande a Windows. `paths` n'a aucune dependance -- les deux cohabitent parce
+# que leur empreinte cumulee reste celle de `console`.
+[dependencies]
+winapi = { version = "0.3", features = ["wincon"] }

@@ -12,7 +12,12 @@ tokio = { version = "1", features = ["full"] }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 futures = "0.3.31"
-janus_nucleus = { path = "../janus_nucleus", features = ["metadata", "music"] }
+janus_log_nucleus = { path = "../nucleus/janus_log_nucleus" }
+janus_config_nucleus = { path = "../nucleus/janus_config_nucleus" }
+janus_platform_nucleus = { path = "../nucleus/janus_platform_nucleus" }
+janus_logwindow_nucleus = { path = "../nucleus/janus_logwindow_nucleus" }
+janus_library_nucleus = { path = "../nucleus/janus_library_nucleus" }
+janus_playlist_nucleus = { path = "../nucleus/janus_playlist_nucleus" }
 
 [build-dependencies]
 winres = "0.1"

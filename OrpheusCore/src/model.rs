@@ -1,8 +1,8 @@
 //! État partagé entre les handlers HTTP et le moteur de rendu.
 
-use janus_nucleus::config::persist_key;
+use janus_config_nucleus::persist_key;
 
-use crate::compose::arranger::Snapshot;
+use janus_synth_nucleus::compose::arranger::Snapshot;
 
 pub struct OrpheusState {
     volume: f32,

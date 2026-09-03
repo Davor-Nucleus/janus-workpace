@@ -71,7 +71,7 @@ mod tests {
     use std::fs;
 
     fn fixture(nom: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join("janus_nucleus_music_test").join(nom);
+        let dir = std::env::temp_dir().join("janus_library_nucleus_music_test").join(nom);
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("rock").join("live")).unwrap();
         fs::create_dir_all(dir.join("jazz")).unwrap();

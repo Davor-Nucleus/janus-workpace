@@ -13,9 +13,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use warp::Filter;
 
-use janus_nucleus::config::{parse_bind, read_config};
-use janus_nucleus::logger::{log_error, log_info, set_gui_enabled};
-use janus_nucleus::stream::{StreamHub, DEFAULT_LEAD, OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE};
+use janus_config_nucleus::{parse_bind, read_config};
+use janus_log_nucleus::{log_error, log_info, set_gui_enabled};
+use janus_stream_nucleus::{StreamHub, DEFAULT_LEAD, OUTPUT_CHANNELS, OUTPUT_SAMPLE_RATE};
 
 use crate::controller::RadioContext;
 use crate::model::RadioState;
@@ -39,12 +39,12 @@ async fn main() {
     let bind_ip = parse_bind(&bind_setting, "webRadioBind");
 
     set_gui_enabled(gui_enabled);
-    janus_nucleus::console::set_title("WebRadioCore Server");
+    janus_platform_nucleus::console::set_title("WebRadioCore Server");
 
     let (close_tx, close_rx) = std::sync::mpsc::channel::<()>();
     if gui_enabled {
         let log_buffer: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-        janus_nucleus::gui::LogWindowHandle::spawn(
+        janus_logwindow_nucleus::LogWindowHandle::spawn(
             log_buffer,
             close_tx,
             "WebRadioCore - Logs".to_string(),
