@@ -131,6 +131,25 @@ pub fn create_routes(
         .and(player_filter.clone())
         .and_then(PlayerController::handle_normalization_toggle);
 
+    // Route GET /api/progress_bar
+    let get_progress_bar_route = warp::path!("api" / "progress_bar")
+        .and(warp::get())
+        .and(player_filter.clone())
+        .and_then(PlayerController::handle_get_progress_bar);
+
+    // Route POST /api/progress_bar
+    let set_progress_bar_route = warp::path!("api" / "progress_bar")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(player_filter.clone())
+        .and_then(PlayerController::handle_set_progress_bar);
+
+    // Route GET /api/progress_bar/toggle
+    let progress_bar_toggle_route = warp::path!("api" / "progress_bar" / "toggle")
+        .and(warp::get())
+        .and(player_filter.clone())
+        .and_then(PlayerController::handle_progress_bar_toggle);
+
     // Combine toutes les routes
     folder_route
         .or(stop_route)
@@ -151,4 +170,7 @@ pub fn create_routes(
         .or(get_normalization_route)
         .or(set_normalization_route)
         .or(normalization_toggle_route)
+        .or(get_progress_bar_route)
+        .or(set_progress_bar_route)
+        .or(progress_bar_toggle_route)
 }

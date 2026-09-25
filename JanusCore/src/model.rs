@@ -2,11 +2,12 @@
 //!
 //! L'ordre des pistes, l'historique et le rebouclage vivent dans
 //! [`janus_playlist_nucleus::Playlist`], commun avec la diffusion en flux. Ne
-//! restent ici que la sortie `rodio` et les trois réglages propres au serveur :
-//! volume (clé `VOLUME`), pause, normalisation.
+//! restent ici que la sortie `rodio` et les réglages propres au serveur : volume
+//! (clé `VOLUME`), pause, normalisation, barre de progression de l'overlay.
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::{fmt, fs::File, io::BufReader};
 
 use janus_config_nucleus::update_config_key;
@@ -33,6 +34,73 @@ pub struct NormalizationRequest {
     pub enabled: bool,
 }
 
+#[derive(Deserialize)]
+/// JSON request body for showing or hiding the overlay progress bar.
+pub struct ProgressBarRequest {
+    pub enabled: bool,
+}
+
+/// Position de lecture de la piste en cours.
+///
+/// rodio 0.17 ne sait pas dire où en est un `Sink` (`get_pos` n'arrive qu'en 0.19) :
+/// la position se déduit de l'horloge, recalée à chaque changement d'état. Tous
+/// passent par [`RodioSink`] — ouverture, pause, reprise, arrêt —, et l'écart entre
+/// l'horloge système et celle de la carte son reste de l'ordre de la milliseconde
+/// sur un morceau.
+///
+/// Les instants sont passés en paramètre plutôt que lus ici : c'est ce qui rend
+/// l'horloge testable sans attendre.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PlayClock {
+    /// Instant qui correspond au début de la piste, tant qu'elle joue.
+    origin: Option<Instant>,
+    /// Position figée, tant que la piste est en pause.
+    frozen: Option<Duration>,
+    /// Incrémenté à chaque recalage. L'overlay extrapole la position lui-même :
+    /// il n'a besoin d'une nouvelle ancre qu'à ces moments-là, pas à chaque tick.
+    revision: u64,
+}
+
+impl PlayClock {
+    pub fn start(&mut self, now: Instant) {
+        self.origin = Some(now);
+        self.frozen = None;
+        self.revision += 1;
+    }
+
+    pub fn pause(&mut self, now: Instant) {
+        if let Some(origin) = self.origin.take() {
+            self.frozen = Some(now.saturating_duration_since(origin));
+            self.revision += 1;
+        }
+    }
+
+    pub fn resume(&mut self, now: Instant) {
+        if let Some(position) = self.frozen.take() {
+            self.origin = Some(now.checked_sub(position).unwrap_or(now));
+            self.revision += 1;
+        }
+    }
+
+    pub fn stop(&mut self) {
+        self.origin = None;
+        self.frozen = None;
+        self.revision += 1;
+    }
+
+    /// Position à l'instant `now`, ou `None` sans piste.
+    pub fn position(&self, now: Instant) -> Option<Duration> {
+        match (self.origin, self.frozen) {
+            (Some(origin), _) => Some(now.saturating_duration_since(origin)),
+            (None, frozen) => frozen,
+        }
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+}
+
 /// La sortie de JanusCore : un `rodio::Sink` sur le périphérique par défaut.
 ///
 /// Garde le gain de normalisation de la piste courante **à part** du volume.
@@ -45,6 +113,7 @@ pub struct RodioSink {
     /// Gain de normalisation de la piste en cours.
     gain: f32,
     volume: f32,
+    clock: PlayClock,
 }
 
 impl RodioSink {
@@ -54,7 +123,13 @@ impl RodioSink {
             sink: None,
             gain: 1.0,
             volume,
+            clock: PlayClock::default(),
         }
+    }
+
+    /// Horloge de la piste en cours, pour l'overlay.
+    pub fn clock(&self) -> &PlayClock {
+        &self.clock
     }
 
     pub fn set_volume(&mut self, volume: f32) {
@@ -68,15 +143,17 @@ impl RodioSink {
         }
     }
 
-    pub fn pause(&self) {
+    pub fn pause(&mut self) {
         if let Some(sink) = &self.sink {
             sink.pause();
+            self.clock.pause(Instant::now());
         }
     }
 
-    pub fn resume(&self) {
+    pub fn resume(&mut self) {
         if let Some(sink) = &self.sink {
             sink.play();
+            self.clock.resume(Instant::now());
         }
     }
 
@@ -122,6 +199,7 @@ impl TrackSink for RodioSink {
         self.gain = gain;
         self.sink = Some(sink);
         self.apply();
+        self.clock.start(Instant::now());
         true
     }
 
@@ -135,6 +213,7 @@ impl TrackSink for RodioSink {
         }
         self.sink = None;
         self.gain = 1.0;
+        self.clock.stop();
     }
 }
 
@@ -146,6 +225,8 @@ pub struct PlayerState {
     pub volume: f32,
     pub normalization_manager: Arc<NormalizationManager>,
     pub normalization_enabled: bool,
+    /// Affichage de la barre de progression sur `/music-current` (clé `musicProgressBar`).
+    pub progress_bar_enabled: bool,
 }
 
 impl fmt::Debug for PlayerState {
@@ -158,6 +239,7 @@ impl fmt::Debug for PlayerState {
             .field("current_file", &self.playlist.current_music_name())
             .field("history_len", &self.playlist.history_len())
             .field("normalization_enabled", &self.normalization_enabled)
+            .field("progress_bar_enabled", &self.progress_bar_enabled)
             .finish()
     }
 }
@@ -167,6 +249,7 @@ impl PlayerState {
         stream_handle: rodio::OutputStreamHandle,
         initial_volume: f32,
         initial_normalization_enabled: bool,
+        initial_progress_bar_enabled: bool,
     ) -> Self {
         Self {
             playlist: Playlist::new(),
@@ -175,6 +258,7 @@ impl PlayerState {
             volume: initial_volume,
             normalization_manager: Arc::new(NormalizationManager::default()),
             normalization_enabled: initial_normalization_enabled,
+            progress_bar_enabled: initial_progress_bar_enabled,
         }
     }
 
@@ -248,6 +332,17 @@ impl PlayerState {
         }
     }
 
+    /// Show or hide the overlay progress bar and persist it to `env.json`
+    /// (key `musicProgressBar`).
+    pub fn set_progress_bar_enabled(&mut self, enabled: bool) {
+        self.progress_bar_enabled = enabled;
+        if let Err(e) = update_config_key("musicProgressBar", serde_json::json!(enabled)) {
+            log_error(format!(
+                "Erreur lors de la mise à jour de la barre de progression dans env.json: {e}"
+            ));
+        }
+    }
+
     /// Stop playback, clear the queue and reset the current track.
     pub fn stop(&mut self) {
         self.sink.clear();
@@ -270,5 +365,77 @@ impl PlayerState {
 
     pub fn get_previous_music_name(&self) -> Option<String> {
         self.playlist.previous_music_name()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const S: Duration = Duration::from_secs(1);
+
+    #[test]
+    fn sans_piste_il_n_y_a_pas_de_position() {
+        let clock = PlayClock::default();
+        assert_eq!(clock.position(Instant::now()), None);
+    }
+
+    #[test]
+    fn la_position_avance_avec_le_temps() {
+        let t0 = Instant::now();
+        let mut clock = PlayClock::default();
+        clock.start(t0);
+        assert_eq!(clock.position(t0 + 42 * S), Some(42 * S));
+    }
+
+    #[test]
+    fn la_pause_fige_la_position_et_la_reprise_repart_de_la() {
+        let t0 = Instant::now();
+        let mut clock = PlayClock::default();
+        clock.start(t0);
+        clock.pause(t0 + 10 * S);
+
+        // Le temps passé en pause ne compte pas.
+        assert_eq!(clock.position(t0 + 60 * S), Some(10 * S));
+
+        clock.resume(t0 + 60 * S);
+        assert_eq!(clock.position(t0 + 65 * S), Some(15 * S));
+    }
+
+    #[test]
+    fn une_nouvelle_piste_repart_de_zero_meme_apres_une_pause() {
+        let t0 = Instant::now();
+        let mut clock = PlayClock::default();
+        clock.start(t0);
+        clock.pause(t0 + 30 * S);
+        clock.start(t0 + 40 * S);
+        assert_eq!(clock.position(t0 + 41 * S), Some(S));
+    }
+
+    #[test]
+    fn l_arret_efface_la_position() {
+        let t0 = Instant::now();
+        let mut clock = PlayClock::default();
+        clock.start(t0);
+        clock.stop();
+        assert_eq!(clock.position(t0 + S), None);
+    }
+
+    #[test]
+    fn seuls_les_vrais_changements_d_etat_font_avancer_la_revision() {
+        let t0 = Instant::now();
+        let mut clock = PlayClock::default();
+        clock.start(t0);
+        let rev = clock.revision();
+
+        // Reprendre une piste qui joue, ou mettre en pause une piste déjà en pause,
+        // ne change rien : l'overlay n'a pas à recevoir de nouvelle ancre.
+        clock.resume(t0 + S);
+        assert_eq!(clock.revision(), rev);
+
+        clock.pause(t0 + 2 * S);
+        clock.pause(t0 + 3 * S);
+        assert_eq!(clock.revision(), rev + 1);
+        assert_eq!(clock.position(t0 + 9 * S), Some(2 * S));
     }
 }

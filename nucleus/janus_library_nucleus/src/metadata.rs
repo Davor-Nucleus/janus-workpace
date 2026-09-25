@@ -10,6 +10,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
 use std::fs::File;
 use std::path::Path;
+use symphonia::core::codecs::CodecParameters;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, MetadataRevision, StandardTagKey};
@@ -23,6 +24,11 @@ pub struct MusicMetadata {
     pub album: Option<String>,
     pub date: Option<String>,
     pub cover_art: Option<String>,
+    /// Durée de la piste en millisecondes, quand le conteneur permet de la
+    /// connaître sans tout décoder. Pour un MP3 sans en-tête Xing/Info, symphonia
+    /// l'estime d'après la taille du fichier : exacte en débit constant, approchée
+    /// sinon.
+    pub duration_ms: Option<u64>,
 }
 
 /// Lit les métadonnées de `path`.
@@ -40,6 +46,7 @@ pub fn read_metadata(path: &Path) -> Option<MusicMetadata> {
         album: None,
         date: None,
         cover_art: None,
+        duration_ms: None,
     };
 
     let Ok(file) = File::open(path) else {
@@ -62,6 +69,11 @@ pub fn read_metadata(path: &Path) -> Option<MusicMetadata> {
         Err(_) => return Some(meta),
     };
 
+    meta.duration_ms = probed
+        .format
+        .default_track()
+        .and_then(|track| duration_ms(&track.codec_params));
+
     // probed.metadata : Option<Metadata<'_>> → .current() → Option<&MetadataRevision>
     // probed.format   : Metadata<'_>         → .current() → Option<&MetadataRevision>
     // Les deux doivent être stockés en bindings pour que les lifetimes tiennent.
@@ -79,6 +91,17 @@ pub fn read_metadata(path: &Path) -> Option<MusicMetadata> {
     }
 
     Some(meta)
+}
+
+/// Durée d'une piste d'après son nombre de trames, en millisecondes.
+fn duration_ms(params: &CodecParameters) -> Option<u64> {
+    let frames = params.n_frames?;
+    if let Some(time_base) = params.time_base {
+        let time = time_base.calc_time(frames);
+        return Some(time.seconds * 1000 + (time.frac * 1000.0) as u64);
+    }
+    let rate = u64::from(params.sample_rate?);
+    (rate > 0).then(|| frames * 1000 / rate)
 }
 
 fn fill_from_revision(rev: &MetadataRevision, meta: &mut MusicMetadata) {
@@ -195,5 +218,41 @@ mod tests {
         assert_eq!(meta.filename, "n-existe-pas.mp3");
         assert!(meta.title.is_none());
         assert!(meta.cover_art.is_none());
+        assert!(meta.duration_ms.is_none());
+    }
+
+    /// WAV PCM 16 bits mono de `samples` échantillons, écrit octet par octet : pas
+    /// de dépendance d'encodage pour un test.
+    fn write_wav(path: &Path, rate: u32, samples: u32) {
+        let data_len = samples * 2;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes()); // taille du bloc fmt
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+        bytes.extend_from_slice(&rate.to_le_bytes());
+        bytes.extend_from_slice(&(rate * 2).to_le_bytes()); // octets par seconde
+        bytes.extend_from_slice(&2u16.to_le_bytes()); // octets par trame
+        bytes.extend_from_slice(&16u16.to_le_bytes()); // bits par échantillon
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        bytes.resize(bytes.len() + data_len as usize, 0);
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn la_duree_est_lue_dans_le_conteneur() {
+        let dir = std::env::temp_dir()
+            .join(format!("janus-metadata-duree-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("une-seconde-et-demie.wav");
+        write_wav(&path, 8000, 12_000);
+
+        let meta = read_metadata(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(meta.duration_ms, Some(1500));
     }
 }

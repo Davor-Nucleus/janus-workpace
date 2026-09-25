@@ -45,6 +45,7 @@ Créez `env.json` à la racine du binaire :
 | `VOLUME` | float (0.0–1.0) | Volume initial |
 | `janusCoreGui` | bool | Ouvre la fenêtre de logs Win32 |
 | `normalizationEnabled` | bool | Active la normalisation EBU R128 au démarrage (défaut : `true`) |
+| `musicProgressBar` | bool | Affiche la barre de progression sur l'overlay `/music-current` (défaut : `false`) |
 
 ## Structure des dossiers
 
@@ -94,6 +95,16 @@ Toutes les routes sont en **GET** sauf indication contraire.
 | `GET /api/normalization/toggle` | Bascule l'état courant |
 
 L'état est persisté dans `env.json` (clé `normalizationEnabled`) et relu au prochain démarrage.
+
+### Barre de progression de l'overlay
+
+| Route | Description |
+|-------|-------------|
+| `GET /api/progress_bar` | `{ "progress_bar_enabled": bool }` |
+| `POST /api/progress_bar` | Body : `{ "enabled": true }` — affiche ou masque |
+| `GET /api/progress_bar/toggle` | Bascule l'état courant |
+
+Persisté dans `env.json` (clé `musicProgressBar`). L'état est aussi poussé par `/api/current_music_ws` (`progress_bar_enabled`), avec `position_ms` et `metadata.duration_ms` : l'overlay `/music-current` fait avancer la barre lui-même, et ne reçoit une nouvelle position qu'aux changements d'état (piste, pause, reprise, arrêt). La position est déduite de l'horloge système, rodio 0.17 n'exposant pas celle du `Sink`.
 
 ### Informations
 

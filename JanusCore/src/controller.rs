@@ -15,7 +15,9 @@ use warp::{Rejection, Reply};
 
 use janus_platform_nucleus::paths::resolve_within;
 
-use crate::model::{NormalizationRequest, PlayerState, VolumeRequest, get_folders_list};
+use crate::model::{
+    NormalizationRequest, PlayerState, ProgressBarRequest, VolumeRequest, get_folders_list,
+};
 
 /// Grouping of HTTP API handlers for the player.
 pub struct PlayerController;
@@ -248,7 +250,7 @@ impl PlayerController {
             let mut cached_meta: serde_json::Value = serde_json::Value::Null;
 
             loop {
-                let snapshot = {
+                let (key, message) = {
                     let guard = player.lock().unwrap();
                     let current_path = guard.playlist.current_path();
 
@@ -261,7 +263,7 @@ impl PlayerController {
                     }
 
                     let has_next = guard.playlist.has_next();
-                    serde_json::json!({
+                    let mut snapshot = serde_json::json!({
                         "queue_len": guard.playlist.queue_len(),
                         "has_sink": guard.sink.has_track(),
                         "paused": guard.paused,
@@ -270,15 +272,28 @@ impl PlayerController {
                         "has_next": has_next,
                         "history_len": guard.playlist.history_len(),
                         "metadata": cached_meta,
-                    })
-                    .to_string()
+                        "progress_bar_enabled": guard.progress_bar_enabled,
+                    });
+
+                    // La position change à chaque tick : la mettre dans la comparaison
+                    // renverrait tout — pochette comprise — deux fois par seconde.
+                    // L'overlay l'extrapole ; il ne lui faut une nouvelle ancre qu'aux
+                    // recalages de l'horloge (piste, pause, reprise, arrêt).
+                    let clock = guard.sink.clock();
+                    let key = format!("{snapshot}#{}", clock.revision());
+                    snapshot["position_ms"] = serde_json::json!(
+                        clock
+                            .position(std::time::Instant::now())
+                            .map(|p| p.as_millis() as u64)
+                    );
+                    (key, snapshot.to_string())
                 };
 
-                if last.as_ref().map(|s| s != &snapshot).unwrap_or(true) {
-                    if tx.send(Message::text(snapshot.clone())).await.is_err() {
+                if last.as_ref() != Some(&key) {
+                    if tx.send(Message::text(message)).await.is_err() {
                         break;
                     }
-                    last = Some(snapshot);
+                    last = Some(key);
                 }
                 sleep(Duration::from_millis(500)).await;
             }
@@ -441,6 +456,52 @@ impl PlayerController {
         let response = serde_json::json!({
             "message": "Normalisation basculée",
             "normalization_enabled": p.normalization_enabled
+        });
+        Ok(warp::reply::with_status(
+            warp::reply::json(&response),
+            warp::http::StatusCode::OK,
+        ))
+    }
+
+    /// Return whether `/music-current` shows its progress bar.
+    pub async fn handle_get_progress_bar(
+        player: Arc<Mutex<PlayerState>>,
+    ) -> Result<impl Reply, std::convert::Infallible> {
+        let p = player.lock().unwrap();
+        let response = serde_json::json!({ "progress_bar_enabled": p.progress_bar_enabled });
+        Ok(warp::reply::with_status(
+            warp::reply::json(&response),
+            warp::http::StatusCode::OK,
+        ))
+    }
+
+    /// Show or hide the progress bar using a JSON body `{ enabled: bool }`.
+    pub async fn handle_set_progress_bar(
+        req: ProgressBarRequest,
+        player: Arc<Mutex<PlayerState>>,
+    ) -> Result<impl Reply, std::convert::Infallible> {
+        let mut p = player.lock().unwrap();
+        p.set_progress_bar_enabled(req.enabled);
+        let response = serde_json::json!({
+            "message": "Barre de progression mise à jour avec succès",
+            "progress_bar_enabled": p.progress_bar_enabled
+        });
+        Ok(warp::reply::with_status(
+            warp::reply::json(&response),
+            warp::http::StatusCode::OK,
+        ))
+    }
+
+    /// Toggle the progress bar on/off.
+    pub async fn handle_progress_bar_toggle(
+        player: Arc<Mutex<PlayerState>>,
+    ) -> Result<impl Reply, std::convert::Infallible> {
+        let mut p = player.lock().unwrap();
+        let new_state = !p.progress_bar_enabled;
+        p.set_progress_bar_enabled(new_state);
+        let response = serde_json::json!({
+            "message": "Barre de progression basculée",
+            "progress_bar_enabled": p.progress_bar_enabled
         });
         Ok(warp::reply::with_status(
             warp::reply::json(&response),

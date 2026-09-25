@@ -37,6 +37,12 @@ pub struct EnvConfig {
     #[serde(rename = "normalizationEnabled")]
     pub normalization_enabled: Option<bool>,
 
+    /// Barre de progression de l'overlay `/music-current`. Réglage d'affichage, mais
+    /// porté par JanusCore : c'est à lui seul que l'overlay est connecté, et c'est
+    /// ce qui permet de l'allumer depuis `/music-config` sans rafraîchir la source.
+    #[serde(rename = "musicProgressBar")]
+    pub music_progress_bar: Option<bool>,
+
     #[serde(rename = "PORT_WEBRADIO")]
     pub port_webradio: Option<u16>,
 
@@ -100,6 +106,7 @@ impl Default for EnvConfig {
             janus_core_gui: Some(true),
             phonos_core_gui: Some(true),
             normalization_enabled: Some(true),
+            music_progress_bar: Some(false),
             // 3000 = praetorcast-core, 3001 = JanusCore, 3002 = PhonosCore,
             // 3003 = chat YouTube, 3004 = présence Discord.
             port_webradio: Some(3005),
