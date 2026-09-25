@@ -1,18 +1,21 @@
-use reqwest;
 use rodio::{Decoder, Sink};
-use serde_json;
 use std::{
     collections::HashMap,
     fs::File,
     io::BufReader,
-    path::Path,
-    sync::{Arc, Mutex, mpsc},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc},
+    time::Duration,
 };
 use warp::Reply;
 
-use crate::model::PlayerState;
+use crate::model::{ActiveSound, PlayerState};
 use janus_log_nucleus::{log_error, log_info};
 use janus_platform_nucleus::paths::resolve_within;
+
+/// Délai maximal d'un appel à JanusCore. Injoignable ou figé, il ne doit bloquer ni
+/// un son ni un handler : sans délai, reqwest attend indéfiniment.
+const MUSIC_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct PlayerController;
 
@@ -22,174 +25,39 @@ impl PlayerController {
         player: Arc<Mutex<PlayerState>>,
         music_port: u16,
     ) -> Result<impl Reply, std::convert::Infallible> {
-        // 1. Vérifier l'état de la musique (paused ou playing ?)
-        let status_url = format!("http://127.0.0.1:{}/api/status", music_port);
-        let was_playing = match reqwest::get(&status_url).await {
-            Ok(resp) => {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    // Si paused == false, alors c'était en lecture
-                    json.get("paused")
-                        .and_then(|v| v.as_bool())
-                        .map(|p| !p)
-                        .unwrap_or(false)
-                } else {
-                    false
-                }
-            }
-            Err(_) => false, // Si on ne peut pas joindre JanusCore, on assume qu'il ne joue pas
-        };
-
-        // 2. Si c'était en lecture, on force la pause
-        if was_playing {
-            let _ = reqwest::get(format!("http://127.0.0.1:{}/api/pause", music_port)).await;
-        }
-
-        if let Some(sound_name) = params.get("sound") {
-            // `sound_name` vient du réseau : `resolve_within` interdit d'en sortir
-            // (chemin absolu ou `..`). Si aucune extension n'est fournie, on tente
-            // mp3, wav puis flac — chaque tentative repasse par le même garde-fou.
-            let base = Path::new("./public/soundboard");
-            let candidates = std::iter::once(sound_name.clone())
-                .chain(["mp3", "wav", "flac"].iter().map(|ext| format!("{}.{}", sound_name, ext)));
-
-            let file_path = match candidates
-                .filter_map(|name| resolve_within(base, &name))
-                .find(|path| path.is_file())
-            {
-                Some(path) => path,
-                None => {
-                    return Ok(warp::reply::with_status(
-                        "Son introuvable dans ./public/soundboard".to_string(),
-                        warp::http::StatusCode::BAD_REQUEST,
-                    ));
-                }
-            };
-            // Joue le son du soundboard (via tokio spawn_blocking pour ne pas bloquer le runtime)
-            tokio::task::spawn_blocking({
-                let file_path = file_path.clone();
-                let player = player.clone();
-                let music_port = music_port;
-                move || {
-
-                    let is_active_normalization = false;
-
-                    // Calculer le gain de normalisation (peut prendre un peu de temps au premier scan)
-                    // Normalisation désactivée pour PhonosCore :
-                    // on joue désormais les sons à leur volume brut (pas de EBU R128 ici).
-                    let normalization_gain = {
-                        if let Ok(p) = player.lock() && is_active_normalization {
-                            p.normalization_manager.get_or_compute_gain(&file_path)
-                        } else {
-                            1.0
-                        }
-                    };
-
-                    
-
-                    // Récupérer le stream_handle du player principal
-                    let stream_handle = {
-                        if let Ok(p) = player.lock() {
-                            p.stream_handle.clone()
-                        } else {
-                            return;
-                        }
-                    };
-
-                    let file = match File::open(&file_path) {
-                        Ok(f) => f,
-                        Err(_) => return,
-                    };
-                    let source = match Decoder::new(BufReader::new(file)) {
-                        Ok(s) => s,
-                        Err(_) => return,
-                    };
-                    let sink = match Sink::try_new(&stream_handle) {
-                        Ok(s) => s,
-                        Err(_) => return,
-                    };
-
-                    // Récupérer le volume courant et l'appliquer au sink du soundboard
-                    let current_volume = if let Ok(p) = player.lock() {
-                        p.volume
-                    } else {
-                        1.0
-                    };
-
-                    // Appliquer le gain de normalisation
-                    sink.set_volume(current_volume * normalization_gain);
-
-                    // Créer un Arc<Mutex<Sink>> pour pouvoir le partager
-                    let sink_arc = Arc::new(Mutex::new(sink));
-                    let sink_arc_clone = sink_arc.clone();
-
-                    // Créer un canal pour arrêter le thread
-                    let (stop_sender, stop_receiver) = mpsc::channel();
-
-                    // Ajouter le sink à la liste des sinks de la soundboard
-                    if let Ok(p) = player.lock() {
-                        log_info("Ajout du sink à la liste des sinks du soundboard");
-                        p.add_soundboard_sink(sink_arc, stop_sender);
-                    } else {
-                        log_error("Impossible de verrouiller le player pour ajouter le sink");
-                    }
-
-                    // Utiliser le clone pour append
-                    if let Ok(sink) = sink_arc_clone.lock() {
-                        sink.append(source);
-                    }
-
-                    // Attendre la fin du son ou un signal d'arrêt (sans timeout)
-                    let should_stop = {
-                        loop {
-                            // Vérifier le canal d'arrêt
-                            if let Ok(_) = stop_receiver.try_recv() {
-                                log_info("Signal d'arrêt reçu, arrêt du son");
-                                if let Ok(sink) = sink_arc_clone.lock() {
-                                    sink.stop();
-                                }
-                                break true;
-                            }
-
-                            // Vérifier si le son est terminé
-                            let is_empty = if let Ok(sink) = sink_arc_clone.lock() {
-                                sink.empty()
-                            } else {
-                                true
-                            };
-                            if is_empty {
-                                log_info("Son terminé naturellement");
-                                break false;
-                            }
-
-                            // Attendre un peu avant de vérifier à nouveau
-                            std::thread::sleep(std::time::Duration::from_millis(100));
-                        }
-                    };
-
-                    // Retirer le sink de la liste des sinks actifs
-                    if let Ok(p) = player.lock() {
-                        p.remove_soundboard_sink(&sink_arc_clone);
-                    }
-
-                    // 4. Relance la musique seulement SI elle était en lecture AVANT
-                    if !should_stop && was_playing {
-                        let _ = reqwest::blocking::get(format!(
-                            "http://127.0.0.1:{}/api/resume",
-                            music_port
-                        ));
-                    }
-                }
-            });
-            Ok(warp::reply::with_status(
-                format!("Son {:?} joué", file_path.file_name().unwrap_or_default()),
-                warp::http::StatusCode::OK,
-            ))
-        } else {
-            Ok(warp::reply::with_status(
+        // Le son est résolu **avant** de toucher à la musique : un nom manquant ou
+        // inconnu répondait 400 en laissant JanusCore en pause.
+        let Some(sound_name) = params.get("sound") else {
+            return Ok(warp::reply::with_status(
                 "Paramètre 'sound' manquant".to_string(),
                 warp::http::StatusCode::BAD_REQUEST,
-            ))
+            ));
+        };
+        let Some(file_path) = resolve_sound(sound_name) else {
+            return Ok(warp::reply::with_status(
+                "Son introuvable dans ./public/soundboard".to_string(),
+                warp::http::StatusCode::BAD_REQUEST,
+            ));
+        };
+
+        // Seul le premier son d'une série décide de la pause (cf. `MusicHold`).
+        let first = lock(&player).hold.begin();
+        if first && music_is_playing(music_port).await {
+            let _ = http().get(music_url(music_port, "pause")).send().await;
+            lock(&player).hold.set_resume(true);
         }
+
+        let reply = format!("Son {:?} joué", file_path.file_name().unwrap_or_default());
+
+        // Joue le son du soundboard (via tokio spawn_blocking pour ne pas bloquer le runtime)
+        tokio::task::spawn_blocking(move || {
+            play_blocking(&file_path, &player);
+            // Toujours appelé, y compris quand la lecture a échoué avant de
+            // commencer : sinon le compteur de sons ne redescendrait jamais.
+            finish_sound(&player, music_port);
+        });
+
+        Ok(warp::reply::with_status(reply, warp::http::StatusCode::OK))
     }
 
     pub async fn handle_soundboard_sounds() -> Result<impl Reply, std::convert::Infallible> {
@@ -249,22 +117,16 @@ impl PlayerController {
         }
     }
 
+    /// Arrête tous les sons en cours.
+    ///
+    /// Ne relance plus la musique de force : chaque son arrêté passe par
+    /// `finish_sound`, et le dernier la relance seulement si c'est le soundboard qui
+    /// l'avait mise en pause. Une musique arrêtée à la main reste arrêtée.
     pub async fn handle_soundboard_stop(
         player: Arc<Mutex<PlayerState>>,
-        music_port: u16,
     ) -> Result<impl Reply, std::convert::Infallible> {
         log_info("API /api/soundboard/stop appelée");
-
-        // Arrêter tous les sinks de la soundboard
-        if let Ok(p) = player.lock() {
-            log_info("Player verrouillé, arrêt des sinks...");
-            p.stop_all_soundboard_sinks();
-        } else {
-            log_error("Impossible de verrouiller le player");
-        }
-
-        // Reprend la musique (force resume) sur l'autre programme
-        let _ = reqwest::get(format!("http://127.0.0.1:{}/api/resume", music_port)).await;
+        lock(&player).stop_all_sounds();
 
         let response = serde_json::json!({
             "message": "Soundboard arrêtée avec succès"
@@ -273,5 +135,144 @@ impl PlayerController {
             warp::reply::json(&response),
             warp::http::StatusCode::OK,
         ))
+    }
+}
+
+/// Un verrou empoisonné par une panique ailleurs ne doit pas rendre le soundboard muet
+/// pour de bon : l'état qu'il protège reste utilisable.
+fn lock(player: &Mutex<PlayerState>) -> MutexGuard<'_, PlayerState> {
+    player.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Client HTTP des appels à JanusCore, avec délai maximal.
+fn http() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(MUSIC_TIMEOUT)
+            .build()
+            .unwrap_or_default()
+    })
+}
+
+fn music_url(music_port: u16, action: &str) -> String {
+    format!("http://127.0.0.1:{music_port}/api/{action}")
+}
+
+/// Vrai si JanusCore joue en ce moment. Injoignable ou réponse illisible vaut « ne
+/// joue pas » : mieux vaut ne pas mettre en pause que relancer plus tard une musique
+/// qu'on n'avait pas arrêtée.
+async fn music_is_playing(music_port: u16) -> bool {
+    let Ok(resp) = http().get(music_url(music_port, "status")).send().await else {
+        return false;
+    };
+    resp.json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|json| json.get("paused").and_then(|v| v.as_bool()))
+        .map(|paused| !paused)
+        .unwrap_or(false)
+}
+
+/// Fichier du son demandé, confiné à `./public/soundboard`.
+///
+/// `sound_name` vient du réseau : `resolve_within` interdit d'en sortir (chemin absolu
+/// ou `..`). Si aucune extension n'est fournie, on tente mp3, wav puis flac — chaque
+/// tentative repasse par le même garde-fou.
+fn resolve_sound(sound_name: &str) -> Option<PathBuf> {
+    let base = Path::new("./public/soundboard");
+    std::iter::once(sound_name.to_string())
+        .chain(["mp3", "wav", "flac"].iter().map(|ext| format!("{sound_name}.{ext}")))
+        .filter_map(|name| resolve_within(base, &name))
+        .find(|path| path.is_file())
+}
+
+/// Joue un son jusqu'à sa fin ou jusqu'à un `/stop`. Bloquant.
+fn play_blocking(file_path: &Path, player: &Mutex<PlayerState>) {
+    let is_active_normalization = false;
+
+    // Calculer le gain de normalisation (peut prendre un peu de temps au premier scan)
+    // Normalisation désactivée pour PhonosCore :
+    // on joue désormais les sons à leur volume brut (pas de EBU R128 ici).
+    let normalization_gain = if is_active_normalization {
+        lock(player).normalization_manager.get_or_compute_gain(file_path)
+    } else {
+        1.0
+    };
+
+    // Récupérer le stream_handle et le volume du player principal
+    let (stream_handle, current_volume) = {
+        let p = lock(player);
+        (p.stream_handle.clone(), p.volume)
+    };
+
+    let source = match File::open(file_path).map(BufReader::new) {
+        Ok(reader) => match Decoder::new(reader) {
+            Ok(s) => s,
+            Err(e) => {
+                log_error(format!("Son illisible {:?} : {e}", file_path.file_name()));
+                return;
+            }
+        },
+        Err(e) => {
+            log_error(format!("Ouverture impossible de {:?} : {e}", file_path.file_name()));
+            return;
+        }
+    };
+    let sink = match Sink::try_new(&stream_handle) {
+        Ok(s) => s,
+        Err(e) => {
+            log_error(format!("Sortie audio indisponible : {e}"));
+            return;
+        }
+    };
+
+    // Appliquer le volume courant et le gain de normalisation
+    sink.set_volume(current_volume * normalization_gain);
+    sink.append(source);
+
+    let sink = Arc::new(Mutex::new(sink));
+    let (stop, stop_receiver) = mpsc::channel();
+    lock(player).add_sound(ActiveSound {
+        sink: sink.clone(),
+        stop,
+    });
+
+    // Attendre la fin du son ou un signal d'arrêt
+    loop {
+        if stop_receiver.try_recv().is_ok() {
+            log_info("Signal d'arrêt reçu, arrêt du son");
+            if let Ok(s) = sink.lock() {
+                s.stop();
+            }
+            break;
+        }
+
+        let is_empty = sink.lock().map(|s| s.empty()).unwrap_or(true);
+        if is_empty {
+            log_info("Son terminé naturellement");
+            break;
+        }
+
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    lock(player).remove_sound(&sink);
+}
+
+/// Fin d'un son, quelle qu'en soit la cause : terminé, arrêté par `/stop` ou en échec
+/// de lecture. Relance la musique à la fin du dernier son, si c'est le soundboard qui
+/// l'avait mise en pause.
+fn finish_sound(player: &Mutex<PlayerState>, music_port: u16) {
+    if !lock(player).hold.end() {
+        return;
+    }
+
+    let resumed = reqwest::blocking::Client::builder()
+        .timeout(MUSIC_TIMEOUT)
+        .build()
+        .and_then(|client| client.get(music_url(music_port, "resume")).send());
+    if let Err(e) = resumed {
+        log_error(format!("Reprise de la musique impossible : {e}"));
     }
 }

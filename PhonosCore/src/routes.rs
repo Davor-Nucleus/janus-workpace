@@ -30,10 +30,7 @@ pub fn create_routes(
     let soundboard_stop_route = warp::path!("api" / "soundboard" / "stop")
         .and(warp::get())
         .and(player_filter.clone())
-        .and(warp::any().map(move || music_port))
-        .and_then(|player: Arc<Mutex<PlayerState>>, music_port: u16| async move {
-            PlayerController::handle_soundboard_stop(player, music_port).await
-        });
+        .and_then(PlayerController::handle_soundboard_stop);
 
     // Combine toutes les routes (soundboard uniquement)
     soundboard_route

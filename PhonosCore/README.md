@@ -10,8 +10,8 @@ Le PhonosCore est un player headless qui lit des effets sonores stockés localem
 - **Lecture de sons du dossier**: joue un fichier audio par son nom, avec ou sans extension (`mp3`, `wav`, `flac`…)
 - **Liste des sons disponibles**: expose un endpoint pour récupérer la liste des fichiers audio disponibles
 - **Arrêt global**: stoppe tous les sons en cours de la soundboard
-- **Pause automatique de la musique**: met JanusCore en pause avant de jouer un effet, puis reprend la lecture
-- **Sons simultanés**: plusieurs sinks en parallèle, chacun avec son propre canal d’arrêt
+- **Pause automatique de la musique**: met JanusCore en pause avant de jouer un effet, puis reprend la lecture à la fin du dernier son — seulement si la musique jouait avant (une pause manuelle est respectée)
+- **Sons simultanés**: plusieurs sinks en parallèle, chacun avec son propre canal d’arrêt ; des sons qui se chevauchent partagent une seule pause de la musique
 - **Volume persistant**: garde le volume courant dans `env.json` et l’applique aux nouveaux sons
 - **Compatibilité Windows**: définit le titre de la console via WinAPI (optionnel sur d’autres OS)
 - **CORS ouvert**: accepte les requêtes cross-origin (GET/POST/etc.)
@@ -74,8 +74,7 @@ Fichier `env.json` (exemple):
   - Si `false`: pas de fenêtre, logs uniquement en console.
   - Si le champ est absent: valeur par défaut `true`.
 
-Variable d’environnement optionnelle:
-- **PORT_MUSIC**: port de l’autre application musique (défaut `3001`). Le serveur appelle `http://127.0.0.1:{PORT_MUSIC}/api/pause` pour pause/reprise.
+- **PORT_MUSIC**: port de JanusCore, lu dans le même `env.json` (défaut `3001`). Le serveur y appelle `/api/status`, `/api/pause` et `/api/resume`, avec un délai maximal de 2 s : un JanusCore injoignable est considéré comme à l’arrêt.
 
 ### 🎚️ Périphérique audio
 
@@ -89,12 +88,12 @@ Base URL: `http://127.0.0.1:{PORT_SOUNDBOARD}`
 
 - `GET /api/soundboard/play?sound={name}`
   - Joue `{name}`. Si l’extension est omise, essaie `mp3`, `wav`, `flac`.
-  - Met en pause la musique externe avant de jouer.
-  - Réponse 200 text/plain sur succès, 400 si introuvable, 500 si erreur IO/decoder.
+  - Met en pause la musique externe avant de jouer (premier son d’une série uniquement).
+  - Réponse 200 text/plain sur succès, 400 si le paramètre manque ou si le son est introuvable — la musique n’est alors pas touchée. Un fichier illisible est journalisé ; la musique reprend comme à la fin d’un son.
 
 - `GET /api/soundboard/stop`
   - Coupe tous les sons de la soundboard.
-  - Appelle ensuite la pause de l’app musique (toggle pause), utile pour reprendre.
+  - La musique reprend si c’est le soundboard qui l’avait mise en pause ; sinon elle reste dans son état.
   - Réponse JSON `{ "message": "Soundboard arrêtée avec succès" }`.
 
 - `GET /api/soundboard/sounds`
@@ -111,7 +110,7 @@ curl "http://127.0.0.1:3002/api/soundboard/play?sound=FOR%20THE%20EMPEROR"
 ```bash
 curl "http://127.0.0.1:3002/api/soundboard/sounds"
 ```
-- Stopper tous les sons et reprendre la musique:
+- Stopper tous les sons (la musique reprend si le soundboard l’avait mise en pause):
 ```bash
 curl "http://127.0.0.1:3002/api/soundboard/stop"
 ```
@@ -137,16 +136,18 @@ curl "http://127.0.0.1:3002/api/soundboard/stop"
   - construit les routes `create_routes(player, music_port)` et applique CORS
 - `routes.rs`: déclare `GET /play`, `GET /stop`, `GET /sounds`
 - `controller.rs`:
-  - `handle_soundboard_play`: résolution de fichier, création `Sink`, application du volume courant, thread de lecture, canal d’arrêt, re-lancement musique si fin naturelle
-  - `handle_soundboard_stop`: broadcast arrêt via canaux, vidage des sinks, puis appel pause musique
+  - `handle_soundboard_play`: résolution de fichier (avant toute pause), pause de la musique par le premier son, thread de lecture (`play_blocking`) puis `finish_sound`, qui relance la musique à la fin du dernier son
+  - `handle_soundboard_stop`: signal d’arrêt à tous les sons ; chacun repasse par `finish_sound`
   - `handle_soundboard_sounds`: lecture du dossier et filtrage extensions
 - `model.rs`:
-  - `PlayerState`: stocke `stream_handle`, `volume`, `soundboard_sinks`, `soundboard_stop_channels`
+  - `PlayerState`: stocke `stream_handle`, `volume`, `sounds` (sink + canal d’arrêt par son) et `hold`
+  - `MusicHold`: compteur de sons en cours et mémoire de la pause décidée par le soundboard (testé)
   - gestion du volume persistant via `update_env_key("VOLUME", ...)`
 - `view.rs`: helpers de réponses JSON (non obligatoires mais prêts à l’emploi)
 
 ## 🧪 Tests
 
+- `cargo test -p PhonosCore` : sons superposés, pause manuelle respectée, reprise unique (`MusicHold`).
 - Tests manuels via curl/Postman sur les endpoints.
 - Ajouter des tests d’intégration (suggestion) pour:
   - la résolution de fichiers sans extension
