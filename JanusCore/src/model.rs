@@ -19,6 +19,8 @@ use janus_playlist_nucleus::{
 use rodio::{Decoder, Sink};
 use serde::Deserialize;
 
+use crate::spectrum::{Spectrum, Tap};
+
 pub use janus_library_nucleus::metadata::MusicMetadata;
 pub use janus_playlist_nucleus::folders as get_folders_list;
 
@@ -114,6 +116,8 @@ pub struct RodioSink {
     gain: f32,
     volume: f32,
     clock: PlayClock,
+    /// Spectre de ce qui est joué, pour `/music-visualizer`.
+    spectrum: Arc<Spectrum>,
 }
 
 impl RodioSink {
@@ -124,12 +128,19 @@ impl RodioSink {
             gain: 1.0,
             volume,
             clock: PlayClock::default(),
+            spectrum: Arc::new(Spectrum::default()),
         }
     }
 
     /// Horloge de la piste en cours, pour l'overlay.
     pub fn clock(&self) -> &PlayClock {
         &self.clock
+    }
+
+    /// Spectre partagé : le WebSocket du visualiseur le lit sans prendre le verrou
+    /// du lecteur, trente fois par seconde.
+    pub fn spectrum(&self) -> Arc<Spectrum> {
+        Arc::clone(&self.spectrum)
     }
 
     pub fn set_volume(&mut self, volume: f32) {
@@ -195,7 +206,7 @@ impl TrackSink for RodioSink {
             path.file_name().unwrap_or_default().to_string_lossy()
         ));
 
-        sink.append(source);
+        sink.append(Tap::new(source, Arc::clone(&self.spectrum)));
         self.gain = gain;
         self.sink = Some(sink);
         self.apply();

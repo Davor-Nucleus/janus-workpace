@@ -106,6 +106,14 @@ L'état est persisté dans `env.json` (clé `normalizationEnabled`) et relu au p
 
 Persisté dans `env.json` (clé `musicProgressBar`). L'état est aussi poussé par `/api/current_music_ws` (`progress_bar_enabled`), avec `position_ms` et `metadata.duration_ms` : l'overlay `/music-current` fait avancer la barre lui-même, et ne reçoit une nouvelle position qu'aux changements d'état (piste, pause, reprise, arrêt). La position est déduite de l'horloge système, rodio 0.17 n'exposant pas celle du `Sink`.
 
+### Visualiseur
+
+| Route | Description |
+|-------|-------------|
+| `WS /api/visualizer_ws` | Tableau de 64 octets (0–255), une valeur par bande de fréquence, de 40 Hz à 16 kHz en échelle logarithmique |
+
+Le spectre est calculé au passage des échantillons vers la carte son (`spectrum.rs` : FFT de 2048 points, fenêtre de Hann, une analyse toutes les 1024 trames), **avant** le volume : baisser la musique ne vide pas les barres. Environ 30 messages par seconde, seulement quand le spectre change ; en pause, un tableau de zéros puis plus rien. Consommé par l'overlay `/music-visualizer` de praetorcast-core.
+
 ### Informations
 
 | Route | Description |

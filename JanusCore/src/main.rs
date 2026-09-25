@@ -3,6 +3,7 @@ mod controller;
 mod model;
 mod routes;
 mod service;
+mod spectrum;
 
 use std::sync::{Arc, Mutex};
 use warp;
@@ -63,8 +64,10 @@ async fn main() {
     let player_service = PlayerService::new(player.clone());
     player_service.start_auto_play_thread();
 
-    // Création des routes
-    let routes = create_routes(player);
+    // Création des routes. Le spectre est pris une fois pour toutes : le WebSocket
+    // du visualiseur le lit sans passer par le verrou du lecteur.
+    let spectrum = player.lock().unwrap().sink.spectrum();
+    let routes = create_routes(player, spectrum);
 
     // CORS restreint aux pages servies par praetorcast-core. Avec `allow_any_origin`,
     // n'importe quel site ouvert dans le navigateur pouvait piloter le lecteur.

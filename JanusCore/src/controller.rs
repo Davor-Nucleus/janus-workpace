@@ -18,6 +18,7 @@ use janus_platform_nucleus::paths::resolve_within;
 use crate::model::{
     NormalizationRequest, PlayerState, ProgressBarRequest, VolumeRequest, get_folders_list,
 };
+use crate::spectrum::Spectrum;
 
 /// Grouping of HTTP API handlers for the player.
 pub struct PlayerController;
@@ -296,6 +297,45 @@ impl PlayerController {
                     last = Some(key);
                 }
                 sleep(Duration::from_millis(500)).await;
+            }
+        }))
+    }
+
+    /// WebSocket du visualiseur : un tableau de `spectrum::BANDS` octets (0 à 255)
+    /// environ trente fois par seconde, seulement quand il change — la musique en
+    /// pause ne coûte donc qu'un tableau de zéros.
+    ///
+    /// Le flux entrant est lu dans la même boucle que l'envoi : une source OBS
+    /// fermée est remarquée tout de suite, au lieu de laisser une tâche tourner
+    /// jusqu'au prochain envoi raté.
+    pub async fn handle_visualizer_ws(
+        ws: Ws,
+        spectrum: Arc<Spectrum>,
+    ) -> Result<impl Reply, Rejection> {
+        Ok(ws.on_upgrade(move |socket| async move {
+            let (mut tx, mut rx) = socket.split();
+            let mut ticker = tokio::time::interval(Duration::from_millis(33));
+            let mut last: Option<Vec<u8>> = None;
+
+            loop {
+                tokio::select! {
+                    incoming = rx.next() => match incoming {
+                        Some(Ok(message)) if message.is_close() => break,
+                        Some(Ok(_)) => {}
+                        _ => break,
+                    },
+                    _ = ticker.tick() => {
+                        let levels = spectrum.levels(std::time::Instant::now());
+                        if last.as_ref() == Some(&levels) {
+                            continue;
+                        }
+                        let text = serde_json::to_string(&levels).unwrap_or_default();
+                        if tx.send(Message::text(text)).await.is_err() {
+                            break;
+                        }
+                        last = Some(levels);
+                    }
+                }
             }
         }))
     }

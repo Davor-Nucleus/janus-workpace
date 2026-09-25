@@ -6,12 +6,20 @@ use warp::{Filter, Rejection, Reply};
 
 use crate::controller::PlayerController;
 use crate::model::PlayerState;
+use crate::spectrum::Spectrum;
 
 /// Build and return the full set of Warp routes to be served.
 pub fn create_routes(
     player: Arc<Mutex<PlayerState>>,
+    spectrum: Arc<Spectrum>,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     let player_filter = warp::any().map(move || player.clone());
+
+    // Route ws /api/visualizer_ws : spectre de la musique, pour /music-visualizer
+    let visualizer_ws_route = warp::path!("api" / "visualizer_ws")
+        .and(warp::ws())
+        .and(warp::any().map(move || spectrum.clone()))
+        .and_then(PlayerController::handle_visualizer_ws);
 
     // Route GET /api/folder?folder=xxx
     let folder_route = warp::path!("api" / "folder")
@@ -173,4 +181,5 @@ pub fn create_routes(
         .or(get_progress_bar_route)
         .or(set_progress_bar_route)
         .or(progress_bar_toggle_route)
+        .or(visualizer_ws_route)
 }
