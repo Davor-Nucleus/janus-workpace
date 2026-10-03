@@ -50,6 +50,7 @@ dependencies = [
  "janus_log_nucleus",
  "janus_logwindow_nucleus",
  "janus_platform_nucleus",
+ "rand",
  "reqwest",
  "rodio",
  "serde",

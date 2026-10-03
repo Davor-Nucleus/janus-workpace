@@ -21,6 +21,22 @@ pub fn create_routes(
             PlayerController::handle_soundboard_play(params, player, music_port).await
         });
 
+    // Route GET /api/soundboard/random?folder=nom_du_dossier : un son tiré au hasard
+    // dans un sous-dossier de public/soundboard (sa racine sans `folder`).
+    let soundboard_random_route = warp::path!("api" / "soundboard" / "random")
+        .and(warp::get())
+        .and(warp::query::<HashMap<String, String>>())
+        .and(player_filter.clone())
+        .and(warp::any().map(move || music_port))
+        .and_then(|params: HashMap<String, String>, player: Arc<Mutex<PlayerState>>, music_port: u16| async move {
+            PlayerController::handle_soundboard_random(params, player, music_port).await
+        });
+
+    // Route GET /api/soundboard/folders : sous-dossiers où tirer un son au hasard
+    let soundboard_folders_route = warp::path!("api" / "soundboard" / "folders")
+        .and(warp::get())
+        .and_then(PlayerController::handle_soundboard_folders);
+
     // Route GET /api/soundboard/sounds pour lister les sons disponibles
     let soundboard_sounds_route = warp::path!("api" / "soundboard" / "sounds")
         .and(warp::get())
@@ -34,6 +50,8 @@ pub fn create_routes(
 
     // Combine toutes les routes (soundboard uniquement)
     soundboard_route
+        .or(soundboard_random_route)
+        .or(soundboard_folders_route)
         .or(soundboard_sounds_route)
         .or(soundboard_stop_route)
 }

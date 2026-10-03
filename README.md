@@ -312,8 +312,28 @@ cargo run
 - **Jouer un son** : `GET /api/soundboard/play?sound=nom_fichier`
   - Joue depuis `public/soundboard/`.
   - **Met automatiquement la musique de JanusCore en pause** et la reprend à la fin.
-- **Lister les sons** : `GET /api/soundboard/sounds`
-- **Arrêter le son** : `GET /api/soundboard/stop` (Arrête le son et reprend la musique)
+- **Jouer un son au hasard** : `GET /api/soundboard/random?folder=NomDossier`
+  - Tire un son dans `public/soundboard/NomDossier/` (sans ses sous-dossiers), ou à la
+    racine de `public/soundboard/` sans `folder`. Même pause de la musique que `/play`.
+  - Le dernier son tiré dans un dossier ne ressort pas au tirage suivant, sauf s'il est
+    seul.
+  - **File d'attente** : les sons tirés au hasard jouent l'un après l'autre, jamais par
+    dessus. La musique reste en pause d'un bout à l'autre de la file, `/stop` la vide, et
+    au-delà de 20 sons en attente le tirage est refusé (`429`). Les sons de `/play` n'y
+    passent pas.
+  - Répond `{ "sound": "NomDossier/son.mp3", "ahead": 2 }` dès le tirage, sans attendre
+    la pause de la musique : `ahead` est le nombre de sons à passer avant lui (`0` : il
+    joue tout de suite). `404` avec `{ "error": … }` pour un dossier vide, inconnu ou hors
+    de `public/soundboard/`.
+  - Utilisé par les alertes de praetorcast-core (`/channel-points-config`, son
+    « Soundboard (aléatoire) »).
+- **Lister les dossiers** : `GET /api/soundboard/folders`
+  - Répond `{ "root": "C:\…\public\soundboard", "folders": [{ "name": "Memes", "sounds": 3 }] }`,
+    par ordre alphabétique ; `sounds` ne compte que les fichiers audio du dossier.
+  - `root` est le dossier réellement lu, relatif au dossier de lancement : la racine de
+    PraetorCast avec `start.bat`, `janus core/PhonosCore` avec `cargo run`.
+- **Lister les sons** : `GET /api/soundboard/sounds` (racine de `public/soundboard/` seulement)
+- **Arrêter le son** : `GET /api/soundboard/stop` (Arrête le son, vide la file des tirages au hasard et reprend la musique)
 
 ### 📻 WebRadioCore (Webradio)
 
